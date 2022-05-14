@@ -1,75 +1,39 @@
-
-
 <!DOCTYPE html>
 <html class="writer-html5" lang="en" >
 <head>
-  <meta charset="utf-8" />
-  
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  
   <title>API Reference &mdash; EMC^2  documentation</title>
-  
-
-  
-  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
-  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
-  <link rel="stylesheet" href="../_static/gallery.css" type="text/css" />
-  <link rel="stylesheet" href="../_static/gallery-binder.css" type="text/css" />
-  <link rel="stylesheet" href="../_static/gallery-dataframe.css" type="text/css" />
-  <link rel="stylesheet" href="../_static/gallery-rendered-html.css" type="text/css" />
-
-  
-  
-
-  
-  
-
-  
-
-  
+      <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/sg_gallery.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/sg_gallery-binder.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/sg_gallery-dataframe.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/sg_gallery-rendered-html.css" type="text/css" />
   <!--[if lt IE 9]>
     <script src="../_static/js/html5shiv.min.js"></script>
   <![endif]-->
   
-    
-      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
         <script src="../_static/jquery.js"></script>
         <script src="../_static/underscore.js"></script>
         <script src="../_static/doctools.js"></script>
         <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
-    
-    <script type="text/javascript" src="../_static/js/theme.js"></script>
-
-    
+    <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
     <link rel="next" title="emc2.core (emc2.core)" href="core.html" />
-    <link rel="prev" title="EMC^2 demo notebook" href="../EMC2example.html" /> 
+    <link rel="prev" title="EMC² Demo Notebook" href="../EMC2example.html" /> 
 </head>
 
-<body class="wy-body-for-nav">
-
-   
+<body class="wy-body-for-nav"> 
   <div class="wy-grid-for-nav">
-    
     <nav data-toggle="wy-nav-shift" class="wy-nav-side">
       <div class="wy-side-scroll">
         <div class="wy-side-nav-search" >
-          
-
-          
             <a href="../index.html" class="icon icon-home"> EMC^2
-          
-
-          
           </a>
-
-          
-            
-            
-          
-
-          
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
     <input type="text" name="q" placeholder="Search docs" />
@@ -77,23 +41,12 @@
     <input type="hidden" name="area" value="default" />
   </form>
 </div>
-
-          
-        </div>
-
-        
-        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
-          
-            
-            
-              
-            
-            
-              <p class="caption"><span class="caption-text">Contents:</span></p>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="../installation.html">EMC^2 Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../usage/index.html">EMC^2 Usage guide</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../EMC2example.html">EMC^2 demo notebook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../EMC2example.html"><em>EMC²</em> Demo Notebook</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">API Reference</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="core.html">emc2.core (emc2.core)</a></li>
 <li class="toctree-l2"><a class="reference internal" href="io.html">emc2.io (emc2.io)</a></li>
@@ -103,71 +56,30 @@
 </li>
 </ul>
 
-            
-          
         </div>
-        
       </div>
     </nav>
 
-    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
-
-      
-      <nav class="wy-nav-top" aria-label="top navigation">
-        
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
           <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
           <a href="../index.html">EMC^2</a>
-        
       </nav>
 
-
       <div class="wy-nav-content">
-        
         <div class="rst-content">
-        
-          
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<div role="navigation" aria-label="breadcrumbs navigation">
-
+          <div role="navigation" aria-label="Page navigation">
   <ul class="wy-breadcrumbs">
-    
       <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
-        
       <li>API Reference</li>
-    
-    
       <li class="wy-breadcrumbs-aside">
-        
-          
             <a href="../_sources/API/index.rst.txt" rel="nofollow"> View page source</a>
-          
-        
       </li>
-    
   </ul>
-
-  
   <hr/>
 </div>
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
-            
+             
   
 <style>
 /* CSS overrides for sphinx_rtd_theme */
@@ -192,14 +104,14 @@
     text-align: unset;
 }
 </style>
-<div class="section" id="api-reference">
+<section id="api-reference">
 <h1>API Reference<a class="headerlink" href="#api-reference" title="Permalink to this headline">¶</a></h1>
 <dl class="field-list simple">
 <dt class="field-odd">Release</dt>
 <dd class="field-odd"><p></p>
 </dd>
 <dt class="field-even">Date</dt>
-<dd class="field-even"><p>Apr 26, 2021</p>
+<dd class="field-even"><p>May 14, 2022</p>
 </dd>
 </dl>
 <p>This shows the details of the API of the Earth Model Column Collaboratory (EMC^2). Documentation
@@ -209,16 +121,27 @@ of each procedure in each module is provided as a reference.</p>
 <li class="toctree-l1"><a class="reference internal" href="core.html">emc2.core (emc2.core)</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="generated/emc2.core.instruments.KAZR.html">emc2.core.instruments.KAZR</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/emc2.core.instruments.HSRL.html">emc2.core.instruments.HSRL</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/emc2.core.instruments.CSAPR.html">emc2.core.instruments.CSAPR</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/emc2.core.instruments.NEXRAD.html">emc2.core.instruments.NEXRAD</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/emc2.core.instruments.XSACR.html">emc2.core.instruments.XSACR</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/emc2.core.instruments.Ten64nm.html">emc2.core.instruments.Ten64nm</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/emc2.core.model.ModelE.html">emc2.core.model.ModelE</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/emc2.core.model.TestModel.html">emc2.core.model.TestModel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/emc2.core.model.E3SM.html">emc2.core.model.E3SM</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/emc2.core.model.DHARMA.html">emc2.core.model.DHARMA</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/emc2.core.model.WRF.html">emc2.core.model.WRF</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/emc2.core.model.TestConvection.html">emc2.core.model.TestConvection</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/emc2.core.model.TestAllStratiform.html">emc2.core.model.TestAllStratiform</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/emc2.core.model.TestHalfAndHalf.html">emc2.core.model.TestHalfAndHalf</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/emc2.core.model.TestModel.html">emc2.core.model.TestModel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/emc2.core.Instrument.html">emc2.core.Instrument</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/emc2.core.Model.html">emc2.core.Model</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="io.html">emc2.io (emc2.io)</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="generated/emc2.io.load_mie_file.html">emc2.io.load_mie_file</a></li>
-<li class="toctree-l2"><a class="reference internal" href="generated/emc2.io.load_c6_file.html">emc2.io.load_c6_file</a></li>
-<li class="toctree-l2"><a class="reference internal" href="generated/emc2.io.load_bulk_c6_file.html">emc2.io.load_bulk_c6_file</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/emc2.io.load_scat_file.html">emc2.io.load_scat_file</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/emc2.io.load_bulk_scat_file.html">emc2.io.load_bulk_scat_file</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/emc2.io.load_arm_file.html">emc2.io.load_arm_file</a></li>
 </ul>
 </li>
@@ -229,9 +152,21 @@ of each procedure in each module is provided as a reference.</p>
 <li class="toctree-l2"><a class="reference internal" href="generated/emc2.simulator.classification.lidar_classify_phase.html">emc2.simulator.classification.lidar_classify_phase</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/emc2.simulator.classification.radar_classify_phase.html">emc2.simulator.classification.radar_classify_phase</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/emc2.simulator.classification.lidar_emulate_cosp_phase.html">emc2.simulator.classification.lidar_emulate_cosp_phase</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/emc2.simulator.classification.calculate_phase_ratio.html">emc2.simulator.classification.calculate_phase_ratio</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/emc2.simulator.psd.calc_mu_lambda.html">emc2.simulator.psd.calc_mu_lambda</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/emc2.simulator.psd.calc_re_thompson.html">emc2.simulator.psd.calc_re_thompson</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/emc2.simulator.radar_moments.calc_total_reflectivity.html">emc2.simulator.radar_moments.calc_total_reflectivity</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/emc2.simulator.radar_moments.accumulate_attenuation.html">emc2.simulator.radar_moments.accumulate_attenuation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/emc2.simulator.radar_moments.calc_radar_empirical.html">emc2.simulator.radar_moments.calc_radar_empirical</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/emc2.simulator.radar_moments.calc_radar_bulk.html">emc2.simulator.radar_moments.calc_radar_bulk</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/emc2.simulator.radar_moments.calc_radar_micro.html">emc2.simulator.radar_moments.calc_radar_micro</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/emc2.simulator.radar_moments.calc_radar_moments.html">emc2.simulator.radar_moments.calc_radar_moments</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/emc2.simulator.lidar_moments.calc_total_alpha_beta.html">emc2.simulator.lidar_moments.calc_total_alpha_beta</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/emc2.simulator.lidar_moments.calc_LDR_and_ext.html">emc2.simulator.lidar_moments.calc_LDR_and_ext</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/emc2.simulator.lidar_moments.accumulate_OD.html">emc2.simulator.lidar_moments.accumulate_OD</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/emc2.simulator.lidar_moments.calc_lidar_empirical.html">emc2.simulator.lidar_moments.calc_lidar_empirical</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/emc2.simulator.lidar_moments.calc_lidar_bulk.html">emc2.simulator.lidar_moments.calc_lidar_bulk</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/emc2.simulator.lidar_moments.calc_lidar_micro.html">emc2.simulator.lidar_moments.calc_lidar_micro</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/emc2.simulator.lidar_moments.calc_lidar_moments.html">emc2.simulator.lidar_moments.calc_lidar_moments</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/emc2.simulator.main.make_simulated_data.html">emc2.simulator.main.make_simulated_data</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/emc2.simulator.subcolumn.set_convective_sub_col_frac.html">emc2.simulator.subcolumn.set_convective_sub_col_frac</a></li>
@@ -240,57 +175,43 @@ of each procedure in each module is provided as a reference.</p>
 <li class="toctree-l2"><a class="reference internal" href="generated/emc2.simulator.subcolumn.set_q_n.html">emc2.simulator.subcolumn.set_q_n</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="plotting.html">emc2.plotting (emc2.plotting)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="plotting.html">emc2.plotting (emc2.plotting)</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="generated/emc2.plotting.SubcolumnDisplay.html">emc2.plotting.SubcolumnDisplay</a></li>
+</ul>
+</li>
 </ul>
 </div>
-</div>
+</section>
 
 
            </div>
-           
           </div>
-          <footer>
-    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="../EMC2example.html" class="btn btn-neutral float-left" title="EMC² Demo Notebook" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
         <a href="core.html" class="btn btn-neutral float-right" title="emc2.core (emc2.core)" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
-        <a href="../EMC2example.html" class="btn btn-neutral float-left" title="EMC^2 demo notebook" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
     </div>
 
   <hr/>
 
   <div role="contentinfo">
-    <p>
-        &#169; Copyright 2019, Bobby Jackson.
-
-    </p>
+    <p>&#169; Copyright 2021, Bobby Jackson, Israel Silber.</p>
   </div>
-    
-    
-    
-    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
-    
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
     <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
-    
-    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
 
 </footer>
         </div>
       </div>
-
     </section>
-
   </div>
-  
-
-  <script type="text/javascript">
+  <script>
       jQuery(function () {
           SphinxRtdTheme.Navigation.enable(true);
       });
-  </script>
-
-  
-  
-    
-   
+  </script> 
 
 </body>
 </html>
