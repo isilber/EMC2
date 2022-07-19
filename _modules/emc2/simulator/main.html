@@ -17,6 +17,7 @@
         <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
         <script src="../../../_static/jquery.js"></script>
         <script src="../../../_static/underscore.js"></script>
+        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
         <script src="../../../_static/doctools.js"></script>
         <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -231,14 +232,13 @@
         <span class="k">for</span> <span class="n">hyd_type</span> <span class="ow">in</span> <span class="n">hydrometeor_classes</span><span class="p">:</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="n">model</span><span class="o">.</span><span class="n">strat_re_fields</span><span class="p">[</span><span class="n">hyd_type</span><span class="p">]</span> <span class="ow">in</span> <span class="n">model_vars</span><span class="p">:</span>
                 <span class="n">model</span> <span class="o">=</span> <span class="n">calc_re_thompson</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">hyd_type</span><span class="p">,</span>
-                                         <span class="n">is_conv</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">subcolumns</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                                         <span class="n">is_conv</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">subcolumns</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
                                          <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">model</span><span class="o">.</span><span class="n">process_conv</span><span class="p">:</span>
-        <span class="n">model_vars</span> <span class="o">=</span> <span class="p">[</span><span class="n">x</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">ds</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">keys</span><span class="p">()]</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">model</span><span class="o">.</span><span class="n">conv_re_fields</span><span class="p">[</span><span class="n">hyd_type</span><span class="p">]</span> <span class="ow">in</span> <span class="n">model_vars</span><span class="p">:</span>
-                <span class="n">model</span> <span class="o">=</span> <span class="n">calc_re_thompson</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">hyd_type</span><span class="p">,</span>
-                                         <span class="n">is_conv</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">subcolumns</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-                                         <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">model</span><span class="o">.</span><span class="n">process_conv</span><span class="p">:</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">model</span><span class="o">.</span><span class="n">conv_re_fields</span><span class="p">[</span><span class="n">hyd_type</span><span class="p">]</span> <span class="ow">in</span> <span class="n">model_vars</span><span class="p">:</span>
+                        <span class="n">model</span> <span class="o">=</span> <span class="n">calc_re_thompson</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">hyd_type</span><span class="p">,</span>
+                                                 <span class="n">is_conv</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">subcolumns</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                                                 <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
 
 
     <span class="c1"># Radar Simulator</span>
