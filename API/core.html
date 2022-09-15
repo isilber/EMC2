@@ -157,7 +157,7 @@ constants used by EMC^2 are also stored in this module.</p>
 <tr class="row-even"><td><p><a class="reference internal" href="generated/emc2.core.instruments.Ten64nm.html#emc2.core.instruments.Ten64nm" title="emc2.core.instruments.Ten64nm"><code class="xref py py-obj docutils literal notranslate"><span class="pre">instruments.Ten64nm</span></code></a>([supercooled])</p></td>
 <td><p>This stores the information for the 1064 nm lidars, e.g., the 2-ch HSRL.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="generated/emc2.core.model.ModelE.html#emc2.core.model.ModelE" title="emc2.core.model.ModelE"><code class="xref py py-obj docutils literal notranslate"><span class="pre">model.ModelE</span></code></a>(file_path[, time_range])</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/emc2.core.model.ModelE.html#emc2.core.model.ModelE" title="emc2.core.model.ModelE"><code class="xref py py-obj docutils literal notranslate"><span class="pre">model.ModelE</span></code></a>(file_path[, time_range, ...])</p></td>
 <td><p>This loads a ModelE simulation with all of the necessary parameters for EMC^2 to run.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="generated/emc2.core.model.TestModel.html#emc2.core.model.TestModel" title="emc2.core.model.TestModel"><code class="xref py py-obj docutils literal notranslate"><span class="pre">model.TestModel</span></code></a>()</p></td>
@@ -169,7 +169,7 @@ constants used by EMC^2 are also stored in this module.</p>
 <tr class="row-even"><td><p><a class="reference internal" href="generated/emc2.core.model.DHARMA.html#emc2.core.model.DHARMA" title="emc2.core.model.DHARMA"><code class="xref py py-obj docutils literal notranslate"><span class="pre">model.DHARMA</span></code></a>(file_path[, time_range])</p></td>
 <td><p>This loads a DHARMA simulation with all of the necessary parameters for EMC^2 to run.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="generated/emc2.core.model.WRF.html#emc2.core.model.WRF" title="emc2.core.model.WRF"><code class="xref py py-obj docutils literal notranslate"><span class="pre">model.WRF</span></code></a>(file_path, column_extent[, ...])</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/emc2.core.model.WRF.html#emc2.core.model.WRF" title="emc2.core.model.WRF"><code class="xref py py-obj docutils literal notranslate"><span class="pre">model.WRF</span></code></a>(file_path[, z_range, time_range, ...])</p></td>
 <td><p>This load a WRF simulation and all of the necessary parameters from the simulation.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="generated/emc2.core.model.TestConvection.html#emc2.core.model.TestConvection" title="emc2.core.model.TestConvection"><code class="xref py py-obj docutils literal notranslate"><span class="pre">model.TestConvection</span></code></a>()</p></td>
@@ -274,6 +274,9 @@ some models).</p>
 </dd>
 <dt><strong>model_name: str</strong></dt><dd><p>The name of the model.</p>
 </dd>
+<dt><strong>variable_density: dict</strong></dt><dd><p>If the model allows for particle density for vary (e.g. 2-moment NSSL), then
+this is a dict pointing to the variable with the density for each hydrometeor class</p>
+</dd>
 </dl>
 </dd>
 </dl>
@@ -293,7 +296,7 @@ method is used for unstacking</p>
 <dd class="field-odd"><dl class="simple">
 <dt><strong>out_coord_name: str</strong></dt><dd><p>Name of output stacked coordinate.</p>
 </dd>
-<dt><strong>file_path: str</strong></dt><dd><p>Path and filename of ModelE simulation output.</p>
+<dt><strong>file_path: str</strong></dt><dd><p>Path and filename of model simulation output.</p>
 </dd>
 <dt><strong>order_dim: bool</strong></dt><dd><p>When True, reorder dimensions to time x height for proper processing.</p>
 </dd>

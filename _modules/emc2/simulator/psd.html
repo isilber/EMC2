@@ -113,8 +113,8 @@
 <span class="sd">    dispersion_mu_bounds: 2-tuple</span>
 <span class="sd">        The lower and upper bounds for the :math:`\mu` parameter.</span>
 <span class="sd">    subcolumns: bool</span>
-<span class="sd">        If True, the fit parameters will be generated for the generated subcolumns</span>
-<span class="sd">        rather than the model data itself.</span>
+<span class="sd">        If True, the fit parameters will be generated using the generated subcolumns</span>
+<span class="sd">        rather than using the &quot;raw&quot; model output.</span>
 <span class="sd">    is_conv: bool</span>
 <span class="sd">        If True, calculate from convective properties. IF false, do stratiform.</span>
 
@@ -160,7 +160,11 @@
     <span class="n">frac_array</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">tile</span><span class="p">(</span>
         <span class="n">model</span><span class="o">.</span><span class="n">ds</span><span class="p">[</span><span class="n">frac_name</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">num_subcolumns</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
     <span class="n">frac_array</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">frac_array</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">frac_array</span><span class="p">)</span>
-    <span class="n">Rho_hyd</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">Rho_hyd</span><span class="p">[</span><span class="n">hyd_type</span><span class="p">]</span><span class="o">.</span><span class="n">magnitude</span>
+    <span class="k">if</span> <span class="n">model</span><span class="o">.</span><span class="n">Rho_hyd</span><span class="p">[</span><span class="n">hyd_type</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;variable&#39;</span><span class="p">:</span>    
+        <span class="n">Rho_hyd</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">ds</span><span class="p">[</span><span class="n">model</span><span class="o">.</span><span class="n">density_variable</span><span class="p">[</span><span class="n">hyd_type</span><span class="p">]]</span><span class="o">.</span><span class="n">values</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">Rho_hyd</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">Rho_hyd</span><span class="p">[</span><span class="n">hyd_type</span><span class="p">]</span><span class="o">.</span><span class="n">magnitude</span>
+
     <span class="n">column_ds</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">ds</span>
 
     <span class="k">if</span> <span class="n">hyd_type</span> <span class="o">==</span> <span class="s2">&quot;cl&quot;</span><span class="p">:</span>
