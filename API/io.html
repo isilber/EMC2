@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>&lt;no title&gt; &mdash; EMC^2  documentation</title>
+  <title>emc2.io (emc2.io) &mdash; EMC^2  documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
       <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
       <link rel="stylesheet" type="text/css" href="../_static/sg_gallery.css?v=61a4c737" />
@@ -24,8 +24,8 @@
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="&lt;no title&gt;" href="simulator.html" />
-    <link rel="prev" title="&lt;no title&gt;" href="core.html" /> 
+    <link rel="next" title="emc2.io.load_mie_file" href="generated/emc2.io.load_mie_file.html" />
+    <link rel="prev" title="emc2.core.Model" href="generated/emc2.core.Model.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -48,11 +48,26 @@
 </div>
         </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
-<ul>
+<ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="../installation.html">EMC^2 Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../usage/index.html">EMC^2 Usage guide</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../EMC2example.html"><em>EMC²</em> Demo Notebook</a></li>
-<li class="toctree-l1"><a class="reference internal" href="index.html">API Reference</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">API Reference</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="core.html">emc2.core (emc2.core)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="core.html#emc2.core.Model"><code class="docutils literal notranslate"><span class="pre">Model</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="core.html#emc2.core.Instrument"><code class="docutils literal notranslate"><span class="pre">Instrument</span></code></a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">emc2.io (emc2.io)</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="generated/emc2.io.load_mie_file.html">emc2.io.load_mie_file</a></li>
+<li class="toctree-l3"><a class="reference internal" href="generated/emc2.io.load_scat_file.html">emc2.io.load_scat_file</a></li>
+<li class="toctree-l3"><a class="reference internal" href="generated/emc2.io.load_bulk_scat_file.html">emc2.io.load_bulk_scat_file</a></li>
+<li class="toctree-l3"><a class="reference internal" href="generated/emc2.io.load_arm_file.html">emc2.io.load_arm_file</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="simulator.html">emc2.simulator (emc2.simulator)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="plotting.html">emc2.plotting (emc2.plotting)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="plotting.html#emc2.plotting.SubcolumnDisplay"><code class="docutils literal notranslate"><span class="pre">SubcolumnDisplay</span></code></a></li>
+</ul>
+</li>
 </ul>
 
         </div>
@@ -70,7 +85,7 @@
   <ul class="wy-breadcrumbs">
       <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
           <li class="breadcrumb-item"><a href="index.html">API Reference</a></li>
-      <li class="breadcrumb-item active">&lt;no title&gt;</li>
+      <li class="breadcrumb-item active">emc2.io (emc2.io)</li>
       <li class="wy-breadcrumbs-aside">
             <a href="../_sources/API/io.rst.txt" rel="nofollow"> View page source</a>
       </li>
@@ -80,15 +95,35 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <div class="toctree-wrapper compound">
+  <section id="emc2-io-emc2-io">
+<span id="module-emc2.io"></span><h1>emc2.io (emc2.io)<a class="headerlink" href="#emc2-io-emc2-io" title="Link to this heading">¶</a></h1>
+<p>This module contains all of the basic I/O functions of EMC^2:</p>
+<table class="autosummary longtable docutils align-default">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/emc2.io.load_mie_file.html#emc2.io.load_mie_file" title="emc2.io.load_mie_file"><code class="xref py py-obj docutils literal notranslate"><span class="pre">load_mie_file</span></code></a>(filename)</p></td>
+<td><p>Loads the Mie parameters from a file.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="generated/emc2.io.load_scat_file.html#emc2.io.load_scat_file" title="emc2.io.load_scat_file"><code class="xref py py-obj docutils literal notranslate"><span class="pre">load_scat_file</span></code></a>(filename, is_radar[, param_type])</p></td>
+<td><p>Loads ice scattering LUTs from a file.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/emc2.io.load_bulk_scat_file.html#emc2.io.load_bulk_scat_file" title="emc2.io.load_bulk_scat_file"><code class="xref py py-obj docutils literal notranslate"><span class="pre">load_bulk_scat_file</span></code></a>(filename[, param_type])</p></td>
+<td><p>Loads bulk ice or liquid scattering LUTs from a file (by default using the PSD used in the C6 collection).</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="generated/emc2.io.load_arm_file.html#emc2.io.load_arm_file" title="emc2.io.load_arm_file"><code class="xref py py-obj docutils literal notranslate"><span class="pre">load_arm_file</span></code></a>(filename, **kwargs)</p></td>
+<td><p>Loads an ARM-compliant netCDF file.</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<div class="toctree-wrapper compound">
 </div>
 
 
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="core.html" class="btn btn-neutral float-left" title="&lt;no title&gt;" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="simulator.html" class="btn btn-neutral float-right" title="&lt;no title&gt;" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="generated/emc2.core.Model.html" class="btn btn-neutral float-left" title="emc2.core.Model" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="generated/emc2.io.load_mie_file.html" class="btn btn-neutral float-right" title="emc2.io.load_mie_file" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>
