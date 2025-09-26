@@ -757,6 +757,10 @@ def _distribute_cl_q_n(tt, sub_data_frac, inv_rel_var, N_columns, tot_hyd_in_sub
         if tot_hyd_in_sub[tt, j] == 1:
             q_profs[hyd_in_sub_loc, j] = q_ic_mean[tt, j]
         elif tot_hyd_in_sub[tt, j] > 1:
+            if q_ic_mean[tt, j] == 0:
+                print(f"Hydrometeors apparently in grid cell but with truncated mixing ratio values "
+                      f"(t_ind={tt}; hgt_ind={j})")
+                continue
             alpha = inv_rel_var[tt, j] / q_ic_mean[tt, j]
             a = inv_rel_var[tt, j]
             b = 1 / alpha
