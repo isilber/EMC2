@@ -58,110 +58,80 @@ def make_simulated_data(model, instrument, N_columns, do_classify=False, unstack
     """
     hydrometeor_classes = model.conv_frac_names.keys()
 
-    if 'use_rad_logic' in kwargs.keys():
-        use_rad_logic = kwargs['use_rad_logic']
-        del kwargs['use_rad_logic']
-    else:
-        use_rad_logic = True
+    # Cache frequently used attributes to avoid repeated attribute lookups
+    process_conv = getattr(model, 'process_conv', False)
+    model_name = getattr(model, 'model_name', None)
+    mcphys_scheme = getattr(model, 'mcphys_scheme', '').lower()
+    inst_class = getattr(instrument, 'instrument_class', '').lower()
 
-    if 'OD_from_sfc' in kwargs.keys():
-        OD_from_sfc = kwargs['OD_from_sfc']
-        del kwargs['OD_from_sfc']
-    else:
-        OD_from_sfc = instrument.OD_from_sfc
+    use_rad_logic = kwargs.pop('use_rad_logic', True)
 
-    if 'parallel' in kwargs.keys():
-        parallel = kwargs['parallel']
-        del kwargs['parallel']
-    else:
-        parallel = True
+    OD_from_sfc = kwargs.pop('OD_from_sfc', instrument.OD_from_sfc)
 
-    if 'chunk' in kwargs.keys():
-        chunk = kwargs['chunk']
-        del kwargs['chunk']
-    else:
-        chunk = None
+    parallel = kwargs.pop('parallel', True)
 
-    if 'convert_zeros_to_nan' in kwargs.keys():
-        convert_zeros_to_nan = kwargs['convert_zeros_to_nan']
-        del kwargs['convert_zeros_to_nan']
-    else:
-        convert_zeros_to_nan = False
+    chunk = kwargs.pop('chunk', None)
 
-    if 'mask_height_rng' in kwargs.keys():
-        mask_height_rng = kwargs['mask_height_rng']
-        del kwargs['mask_height_rng']
-    else:
-        mask_height_rng = None
+    convert_zeros_to_nan = kwargs.pop('convert_zeros_to_nan', False)
 
-    if 'hyd_types' in kwargs.keys():
-        hyd_types = kwargs['hyd_types']
-        del kwargs['hyd_types']
-    else:
-        hyd_types = None
+    mask_height_rng = kwargs.pop('mask_height_rng', None)
 
-    if 'mie_for_ice' in kwargs.keys():
-        mie_for_ice = {"conv": kwargs['mie_for_ice'],
-                       "strat": kwargs['mie_for_ice']}
-        del kwargs['mie_for_ice']
+    hyd_types = kwargs.pop('hyd_types', None)
+
+    mie_val = kwargs.pop('mie_for_ice', None)
+    if mie_val is not None:
+        # allow a single value to be provided and apply to both conv/strat
+        mie_for_ice = {"conv": mie_val, "strat": mie_val}
     else:
         if use_rad_logic:
             mie_for_ice = {"conv": False, "strat": False}
-        elif model.mcphys_scheme.lower() == "p3":
+        elif mcphys_scheme == "p3":
             mie_for_ice = {"conv": False, "strat": False}  # ice shape integrated into microphysics
         else:
             mie_for_ice = {"conv": False, "strat": True}  # use True for strat (micro), False for conv (rad)
-    if 'use_empiric_calc' in kwargs.keys():
-        use_empiric_calc = kwargs['use_empiric_calc']
-        del kwargs['use_empiric_calc']
-    else:
-        use_empiric_calc = False
+    use_empiric_calc = kwargs.pop('use_empiric_calc', False)
 
     if skip_subcol_gen:
-        print('Skipping subcolumn generator (make sure subcolumns were already generated).')
+        print("Skipping subcolumn generator (make sure subcolumns were already generated).")
     else:
         print("## Creating subcolumns...")
-        if model.process_conv:
+        if process_conv:
             for hyd_type in hydrometeor_classes:
                 model = set_convective_sub_col_frac(
                     model, hyd_type, N_columns=N_columns,
                     use_rad_logic=use_rad_logic)
         else:
-            print("No convective processing for %s" % model.model_name)
+            print(f"No convective processing for {model_name}")
 
         # Subcolumn Generator
         model = set_stratiform_sub_col_frac(
             model, use_rad_logic=use_rad_logic, N_columns=N_columns, parallel=parallel, chunk=chunk)
-        precip_types = list(hydrometeor_classes)
-        if "cl" in precip_types:
-            precip_types.remove("cl")
-        if "ci" in precip_types:
-            precip_types.remove("ci")
 
-        
-        model = set_precip_sub_col_frac(
-                model, is_conv=False, use_rad_logic=use_rad_logic, parallel=parallel, chunk=chunk,
-                precip_types=precip_types)
-        if model.process_conv:
-            model = set_precip_sub_col_frac(
-                model, is_conv=True, use_rad_logic=use_rad_logic, parallel=parallel, chunk=chunk)
-        for hyd_type in hydrometeor_classes:
-            if hyd_type != 'cl':
-                model = set_q_n(
-                    model, hyd_type, is_conv=False,
-                    qc_flag=False, use_rad_logic=use_rad_logic, parallel=parallel, chunk=chunk)
-                if model.process_conv:
-                    model = set_q_n(
-                        model, hyd_type, is_conv=True,
-                        qc_flag=False, use_rad_logic=use_rad_logic, parallel=parallel, chunk=chunk)
+        # Build precip_types excluding cloud-only classes
+        precip_types = [h for h in hydrometeor_classes if h not in {"cl", "ci"}]
+
+        # Call set_precip_sub_col_frac for stratiform (is_conv=False) and optionally convective
+        for is_conv in (False, True) if process_conv else (False,):
+            if not is_conv:
+                model = set_precip_sub_col_frac(
+                    model, is_conv=is_conv, use_rad_logic=use_rad_logic, parallel=parallel, chunk=chunk,
+                    precip_types=precip_types)
             else:
+                model = set_precip_sub_col_frac(
+                    model, is_conv=is_conv, use_rad_logic=use_rad_logic, parallel=parallel, chunk=chunk)
+
+        # Distribute q and N among subcolumns for each hydrometeor type and convective state
+        is_conv_list = (False, True) if process_conv else (False,)
+        for hyd_type in hydrometeor_classes:
+            for is_conv in is_conv_list:
+                # For cloud liquid 'cl', use qc_flag=True only for stratiform (is_conv=False)
+                if hyd_type == 'cl' and not is_conv:
+                    qc_flag = True
+                else:
+                    qc_flag = False
                 model = set_q_n(
-                    model, hyd_type, is_conv=False,
-                    qc_flag=True, use_rad_logic=use_rad_logic, parallel=parallel, chunk=chunk)
-                if model.process_conv:
-                    model = set_q_n(
-                        model, hyd_type, is_conv=True,
-                        qc_flag=False, use_rad_logic=use_rad_logic, parallel=parallel, chunk=chunk)
+                    model, hyd_type, is_conv=is_conv,
+                    qc_flag=qc_flag, use_rad_logic=use_rad_logic, parallel=parallel, chunk=chunk)
 
     # Skip moment calculations and return only subcolumn-distributed q and N, else continue to simulator
     if subcol_gen_only:
@@ -169,20 +139,17 @@ def make_simulated_data(model, instrument, N_columns, do_classify=False, unstack
     else:
 
         # Radar Simulator
-        if instrument.instrument_class.lower() == "radar":
+        if inst_class == "radar":
             print("Generating radar moments...")
-            if 'reg_rng' in kwargs.keys():
-                ref_rng = kwargs['ref_rng']
-                del kwargs['ref_rng']
-            else:
-                ref_rng = 1000
+            # allow callers to override the reference range via kwargs; default to 1000
+            ref_rng = kwargs.pop('ref_rng', 1000)
 
             model = calc_radar_moments(
                 instrument, model, False, OD_from_sfc=OD_from_sfc, hyd_types=hyd_types,
                 parallel=parallel, chunk=chunk, mie_for_ice=mie_for_ice["strat"],
                 use_rad_logic=use_rad_logic,
                 use_empiric_calc=use_empiric_calc, calc_spectral_width=calc_spectral_width,**kwargs)
-            if model.process_conv:
+            if process_conv:
                 model = calc_radar_moments(
                     instrument, model, True, OD_from_sfc=OD_from_sfc, hyd_types=hyd_types,
                     parallel=parallel, chunk=chunk, mie_for_ice=mie_for_ice["conv"],
@@ -198,24 +165,16 @@ def make_simulated_data(model, instrument, N_columns, do_classify=False, unstack
                     convert_zeros_to_nan=convert_zeros_to_nan)
 
         # Lidar Simulator
-        elif instrument.instrument_class.lower() == "lidar":
+        elif inst_class == "lidar":
             print("Generating lidar moments...")
-            if 'ext_OD' in kwargs.keys():
-                ext_OD = kwargs['ext_OD']
-                del kwargs['ext_OD']
-            else:
-                ext_OD = instrument.ext_OD
-            if 'eta' in kwargs.keys():
-                eta = kwargs['eta']
-                del kwargs['eta']
-            else:
-                eta = instrument.eta
+            ext_OD = kwargs.pop('ext_OD', instrument.ext_OD)
+            eta = kwargs.pop('eta', instrument.eta)
             model = calc_lidar_moments(
                 instrument, model, False, OD_from_sfc=OD_from_sfc, hyd_types=hyd_types,
                 parallel=parallel, eta=eta, chunk=chunk,
                 mie_for_ice=mie_for_ice["strat"], use_rad_logic=use_rad_logic,
                 use_empiric_calc=use_empiric_calc, **kwargs)
-            if model.process_conv:
+            if process_conv:
                 model = calc_lidar_moments(
                     instrument, model, True, OD_from_sfc=OD_from_sfc, hyd_types=hyd_types,
                     parallel=parallel, eta=eta, chunk=chunk,
@@ -241,8 +200,9 @@ def make_simulated_data(model, instrument, N_columns, do_classify=False, unstack
         
     
     # Unstack dims in case of regional model output (typically done at the end of all EMC^2 processing)
-    if np.logical_and(model.stacked_time_dim is not None, unstack_dims):
-        print("Unstacking the %s dimension (time, lat, and lon dimensions)" % model.stacked_time_dim)
+    sd = getattr(model, 'stacked_time_dim', None)
+    if (sd is not None) and unstack_dims:
+        print(f"Unstacking the {sd} dimension (time, lat, and lon dimensions)")
         model.unstack_time_lat_lon()
         
     return model
