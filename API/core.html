@@ -233,9 +233,9 @@ with units, making EMC^2 unit aware.</p>
 <dt class="sig sig-object py" id="emc2.core.Model">
 <span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">emc2.core.</span></span><span class="sig-name descname"><span class="pre">Model</span></span><a class="reference internal" href="../_modules/emc2/core/model.html#Model"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#emc2.core.Model" title="Link to this definition">¶</a></dt>
 <dd><p>This class stores the model specific parameters for the radar simulator.</p>
-<dl class="field-list simple">
+<dl class="field-list">
 <dt class="field-odd">Attributes<span class="colon">:</span></dt>
-<dd class="field-odd"><dl class="simple">
+<dd class="field-odd"><dl>
 <dt><strong>Rho_hyd: dict</strong></dt><dd><p>A dictionary whose keys are the names of the model’s hydrometeor classes and
 whose values are the density of said hydrometeors in <span class="math notranslate nohighlight">\(kg\ m^{-3}\)</span></p>
 </dd>
@@ -247,9 +247,13 @@ If None, then not applying this correction factor</p>
 <dt><strong>lidar_ratio: dict</strong></dt><dd><p>A dictionary whose keys are the names of the model’s hydrometeor classes and
 whose values are the lidar_ratio of said hydrometeors.</p>
 </dd>
-<dt><strong>vel_param_a: dict</strong></dt><dd><p>A dictionary whose keys are the names of the model’s hydrometeor classes and
-whose values are the <span class="math notranslate nohighlight">\(a\)</span> parameters to the equation <span class="math notranslate nohighlight">\(V = aD^b\)</span> used to
-calculate terminal velocity corresponding to each hydrometeor.</p>
+<dt><strong>vel_param_a: dict</strong></dt><dd><p>A dictionary whose keys are the names of the model’s hydrometeor classes.
+Values can be either:
+- A scalar (float): the <span class="math notranslate nohighlight">\(a\)</span> parameter to <span class="math notranslate nohighlight">\(V = aD^b\)</span> for all sizes
+- A dict: maps particle size ranges (keys: diameter in meters) to <span class="math notranslate nohighlight">\(a\)</span> coefficients.</p>
+<blockquote>
+<div><p>For a diameter D, the coefficient for the largest size edge ≤ D is used.</p>
+</div></blockquote>
 </dd>
 <dt><strong>vel_param_b: dict</strong></dt><dd><p>A dictionary whose keys are the names of the model’s hydrometeor classes and
 whose values are the <span class="math notranslate nohighlight">\(b\)</span> parameters to the equation <span class="math notranslate nohighlight">\(V = aD^b\)</span> used to
