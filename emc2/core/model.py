@@ -31,7 +31,7 @@ except ImportError:
 
 
 class Model():
-    """
+    r"""
     This class stores the model specific parameters for the radar simulator.
 
     Attributes
@@ -48,9 +48,11 @@ class Model():
        A dictionary whose keys are the names of the model's hydrometeor classes and
        whose values are the lidar_ratio of said hydrometeors.
     vel_param_a: dict
-       A dictionary whose keys are the names of the model's hydrometeor classes and
-       whose values are the :math:`a` parameters to the equation :math:`V = aD^b` used to
-       calculate terminal velocity corresponding to each hydrometeor.
+        A dictionary whose keys are the names of the model's hydrometeor classes.
+        Values can be either:
+        - A scalar (float): the :math:`a` parameter to :math:`V = aD^b` for all sizes
+        - A dict: maps particle size ranges (keys: diameter in meters) to :math:`a` coefficients.
+            For a diameter D, the coefficient for the largest size edge ≤ D is used.
     vel_param_b: dict
        A dictionary whose keys are the names of the model's hydrometeor classes and
        whose values are the :math:`b` parameters to the equation :math:`V = aD^b` used to
@@ -181,8 +183,96 @@ class Model():
 
     def _add_vel_units(self):
         for my_keys in self.vel_param_a.keys():
-            self.vel_param_a[my_keys] = self.vel_param_a[my_keys] * (
-                ureg.meter ** (1 - self.vel_param_b[my_keys].magnitude) / ureg.second)
+            if isinstance(self.vel_param_a[my_keys], dict):
+                # Piecewise case: both a and b should be dicts with matching keys
+                if not isinstance(self.vel_param_b[my_keys], dict):
+                    raise ValueError(
+                        f"vel_param_b['{my_keys}'] must be dict if vel_param_a['{my_keys}'] is dict")
+                if sorted(self.vel_param_a[my_keys].keys()) != sorted(self.vel_param_b[my_keys].keys()):
+                    raise ValueError(
+                        f"vel_param_a and vel_param_b have mismatched size bins for '{my_keys}'")
+                
+                # For piecewise: don't add units here. Units are handled in _get_terminal_velocity_params()
+                # where we perform the unit conversion from (μm, cm/s) to SI (m, m/s).
+                # Simply validate that b values have units already.
+                for size_key in self.vel_param_b[my_keys].keys():
+                    if not hasattr(self.vel_param_b[my_keys][size_key], 'magnitude'):
+                        raise ValueError(
+                            f"vel_param_b['{my_keys}'][{size_key}] must have units (e.g., dimensionless)")
+            else:
+                # Scalar case: both should be scalars
+                if isinstance(self.vel_param_b[my_keys], dict):
+                    raise ValueError(
+                        f"vel_param_b['{my_keys}'] must be scalar if vel_param_a['{my_keys}'] is scalar")
+                
+                self.vel_param_a[my_keys] = self.vel_param_a[my_keys] * (
+                    ureg.meter ** (1 - self.vel_param_b[my_keys].magnitude) / ureg.second)
+
+    def _get_terminal_velocity_params(self, hyd_type, p_diam_array=None):
+        """
+        Get terminal velocity parameters for a given hydrometeor class.
+
+        Parameters
+        ----------
+        hyd_type: str
+            Hydrometeor class name.
+        p_diam_array: ndarray or None
+            Array of particle diameters in meters for piecewise coefficients.
+            If None, then scalar coefficients are returned.
+
+        Returns
+        -------
+        tuple of (vel_a, vel_b, is_piecewise)
+            - vel_a: coefficient in units of m^(1-b) / s
+            - vel_b: exponent (dimensionless)
+            - is_piecewise: bool indicating if piecewise coefficients were used
+        
+        Notes
+        -----
+        For piecewise coefficients: All unit conversions are handled internally.
+        Piecewise coefficients are calibrated for D in μm with output in cm/s.
+        This method converts internally so output is always in SI units (m, m/s).
+        """
+        param_a = self.vel_param_a[hyd_type]
+        param_b = self.vel_param_b[hyd_type]
+        
+        a_is_dict = isinstance(param_a, dict)
+        b_is_dict = isinstance(param_b, dict)
+        
+        if a_is_dict != b_is_dict:
+            raise ValueError(...)
+        
+        if not a_is_dict:
+            return param_a, param_b, False  # Scalar case, no conversion needed
+        
+        # Piecewise case: do conversions internally
+        if p_diam_array is None:
+            raise ValueError(...)
+        
+        size_edges = np.array(sorted(param_a.keys()))
+        bin_indices = np.searchsorted(size_edges, p_diam_array, side='right') - 1
+        bin_indices = np.clip(bin_indices, 0, len(size_edges) - 1)
+        
+        # Extract raw magnitudes (these are in non-SI calibration: μm input, cm/s output)
+        vel_a_magnitudes = np.array([param_a[size_edges[idx]] for idx in bin_indices])
+        vel_b_magnitudes = np.array([param_b[size_edges[idx]].magnitude for idx in bin_indices])
+        
+        # **Convert from (μm, cm/s) calibration to SI (m, m/s)**
+        # Original formula: V = a*D^b with D in μm, output in cm/s
+        # Desired formula: V_SI = a_SI*D_SI^b with D_SI in m, output in m/s
+        # Derivation:
+        #   V_m/s = (V_cm/s) * 0.01 = (a * D_μm^b) * 0.01
+        #   where D_μm = D_m * 1e6
+        #   so: V_m/s = a * (D_m * 1e6)^b * 0.01 = a * 0.01 * (1e6)^b * D_m^b
+        # Therefore: a_SI = a * 1e-2 * (1e6)^b, with units m^(1-b)/s
+        
+        conversion_factor = 1e-2 * (1e6) ** vel_b_magnitudes
+        vel_a_si = vel_a_magnitudes * conversion_factor
+        
+        # For piecewise: return plain numpy arrays since b values vary per element
+        # The calling code will use these with the formula V = vel_a_si * D_SI^vel_b_magnitudes
+        # which automatically gives m/s when D is in meters
+        return vel_a_si, vel_b_magnitudes, True  # True = piecewise was used
 
     def _prepare_variables(self):
         for variable in self.ds.variables.keys():
@@ -755,6 +845,19 @@ class E3SMv1(Model):
                             'ci': 1. * ureg.dimensionless,
                             'pl': 0.8 * ureg.dimensionless,
                             'pi': 0.41 * ureg.dimensionless}
+        if mcphys_scheme == "P3":
+            self.vel_param_a['pl'] = {
+                0.0: 4.5795e5,
+                1.3443e-4: 4.962e3,
+                1.51164e-3: 1.732e3,
+                3.47784e-3: 9.17e2
+            }
+            self.vel_param_b['pl'] = {
+                0.0: (2/3) * ureg.dimensionless,
+                1.3443e-4: (1/3) * ureg.dimensionless,
+                1.51164e-3: (1/6) * ureg.dimensionless,
+                3.47784e-3: 0.0 * ureg.dimensionless
+            }
         super()._add_vel_units()
         self.q_field = "Q"
         self.N_field = {'cl': 'NUMLIQ', 'ci': 'NUMICE', 'pl': 'NUMRAI', 'pi': 'NUMSNO'}
