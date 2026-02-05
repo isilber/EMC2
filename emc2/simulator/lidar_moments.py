@@ -6,6 +6,12 @@ from scipy.interpolate import LinearNDInterpolator
 from scipy.interpolate import RegularGridInterpolator
 
 from .attenuation import calc_theory_beta_m
+
+# Version check for trapezoid function (trapezoid added in NumPy 2.0)
+if hasattr(np, 'trapezoid'):
+    trapz_func = np.trapezoid
+else:
+    trapz_func = np.trapz
 from .psd import calc_and_set_psd_params
 from .radar_moments import _set_p3_tiled_arrays
 from ..core.instrument import ureg, quantity
@@ -913,8 +919,8 @@ def _calc_strat_lidar_properties(tt, N_0, lambdas, mu, p_diam, total_hydrometeor
         N_D = np.stack(N_D, axis=0)
 
         Calc_tmp = np.tile(beta_p, (num_subcolumns, 1)) * N_D
-        beta_p_strat[:, k] = np.trapz(Calc_tmp, x=D, axis=1).astype('float64')
+        beta_p_strat[:, k] = trapz_func(Calc_tmp, x=D, axis=1).astype('float64')
         Calc_tmp = np.tile(alpha_p, (num_subcolumns, 1)) * N_D
-        alpha_p_strat[:, k] = np.trapz(Calc_tmp, x=D, axis=1).astype('float64')
+        alpha_p_strat[:, k] = trapz_func(Calc_tmp, x=D, axis=1).astype('float64')
 
     return beta_p_strat, alpha_p_strat

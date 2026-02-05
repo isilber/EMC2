@@ -8,6 +8,12 @@ from scipy.interpolate import LinearNDInterpolator
 from scipy.interpolate import RegularGridInterpolator
 
 from .attenuation import calc_radar_atm_attenuation
+
+# Version check for trapezoid function (trapezoid added in NumPy 2.0)
+if hasattr(np, 'trapezoid'):
+    trapz_func = np.trapezoid
+else:
+    trapz_func = np.trapz
 from .psd import calc_velocity_nssl, calc_and_set_psd_params
 from ..core.instrument import ureg, quantity
 
@@ -1097,7 +1103,7 @@ def _calc_sigma_d_tot_cl(tt, N_0, lambdas, mu, instrument,
         Calc_tmp = np.tile(
             instrument.mie_table[hyd_type]["beta_p"].values,
             (num_subcolumns, 1)) * N_D.T
-        moment_denom = np.trapz(Calc_tmp, x=p_diam, axis=1).astype('float64')
+        moment_denom = trapz_func(Calc_tmp, x=p_diam, axis=1).astype('float64')
         if mcphys_scheme.lower() in ["mg2", "mg", "morrison", "nssl", "p3"]:  # power-law velocity schemes for liquid
             if model is not None:
                 vel_a_arr, vel_b_arr, _ = model._get_terminal_velocity_params(hyd_type, p_diam_array=p_diam)
@@ -1122,7 +1128,7 @@ def _calc_sigma_d_tot_cl(tt, N_0, lambdas, mu, instrument,
         v_tmp = -v_tmp.astype('float64')
         v_use = v_tmp * rhoa_corr_single
         Calc_tmp2 = (v_use - np.tile(Vd_tot[:, tt, k], (num_diam, 1)).T) ** 2 * Calc_tmp.astype('float64')
-        sigma_d_numer[:, k] = np.trapz(Calc_tmp2, x=p_diam, axis=1)
+        sigma_d_numer[:, k] = trapz_func(Calc_tmp2, x=p_diam, axis=1)
 
     return sigma_d_numer, moment_denom
 
@@ -1164,14 +1170,14 @@ def _calc_sigma_d_tot(tt, num_subcolumns, v_tmp, N_0, lambdas, mu,
                 #N_D.append(N_0_tmp[i] * p_diam ** mu * np.exp(-lambda_tmp[i] * p_diam))
         N_D = np.stack(N_D, axis=1).astype('float64')
         Calc_tmp = np.tile(beta_p, (num_subcolumns, 1)) * N_D.T
-        moment_denom = np.trapz(Calc_tmp, x=p_diam, axis=1).astype('float64')
+        moment_denom = trapz_func(Calc_tmp, x=p_diam, axis=1).astype('float64')
         v_use = v_tmp
         if rhoe is not None:
             if mcphys_scheme.lower() in ["nssl"]:  # NSSL parameterization for fall velocity
                 v_use = calc_velocity_nssl(rhoe[tt, k], p_diam, hyd_type)
         v_use = v_use * rhoa_corr_single
         Calc_tmp2 = (v_use - np.tile(vd_tot[:, tt, k], (num_diam, 1)).T) ** 2 * Calc_tmp.astype('float64')
-        Calc_tmp2 = np.trapz(Calc_tmp2, x=p_diam, axis=1)
+        Calc_tmp2 = trapz_func(Calc_tmp2, x=p_diam, axis=1)
         sigma_d_numer[:, k] = np.where(sub_frac_arr[:, tt, k] == 0, 0, Calc_tmp2)
 
     return sigma_d_numer, moment_denom
@@ -1213,16 +1219,16 @@ def _calculate_observables_liquid(tt, total_hydrometeor, N_0, lambdas, mu,
 
         N_D = np.stack(N_D, axis=0)
         Calc_tmp = beta_p * N_D
-        tmp_od = np.trapz(alpha_p * N_D, x=p_diam, axis=1)
-        moment_denom = np.trapz(Calc_tmp, x=p_diam, axis=1).astype('float64')
+        tmp_od = trapz_func(alpha_p * N_D, x=p_diam, axis=1)
+        moment_denom = trapz_func(Calc_tmp, x=p_diam, axis=1).astype('float64')
         Ze[:, k] = \
             (moment_denom * instrument.wavelength ** 4) / (instrument.K_w * np.pi ** 5) * 1e-6
         v_use = v_tmp * rhoa_corr_single
         Calc_tmp2 = v_use * Calc_tmp.astype('float64')
-        V_d_numer = np.trapz(Calc_tmp2, x=p_diam, axis=1)
+        V_d_numer = trapz_func(Calc_tmp2, x=p_diam, axis=1)
         V_d[:, k] = V_d_numer / moment_denom
         Calc_tmp2 = (v_use - np.tile(V_d[:, k], (num_diam, 1)).T) ** 2 * Calc_tmp
-        sigma_d_numer = np.trapz(Calc_tmp2, x=p_diam, axis=1)
+        sigma_d_numer = trapz_func(Calc_tmp2, x=p_diam, axis=1)
         sigma_d[:, k] = np.sqrt(sigma_d_numer / moment_denom)
         V_d_numer_tot[:, k] += V_d_numer
         moment_denom_tot[:, k] += moment_denom
@@ -1271,15 +1277,15 @@ def _calculate_other_observables(tt, total_hydrometeor, N_0, lambdas, mu,
         N_D = np.stack(N_D, axis=0)
         Calc_tmp = np.tile(beta_p, (num_subcolumns, 1)) * N_D
         tmp_od = np.tile(alpha_p, (num_subcolumns, 1)) * N_D
-        tmp_od = np.trapz(tmp_od, x=p_diam, axis=1)
+        tmp_od = trapz_func(tmp_od, x=p_diam, axis=1)
         tmp_od = np.where(sub_frac_arr[:, tt, k] == 0, 0, tmp_od)
-        moment_denom = np.trapz(Calc_tmp, x=p_diam, axis=1)
+        moment_denom = trapz_func(Calc_tmp, x=p_diam, axis=1)
         moment_denom = np.where(sub_frac_arr[:, tt, k] == 0, 0, moment_denom)
         Ze[:, k] = \
             (moment_denom * wavelength ** 4) / (K_w * np.pi ** 5) * 1e-6
         if beta_pv is not None:
             Calc_tmp = np.tile(beta_pv, (num_subcolumns, 1)) * N_D
-            moment_denom = np.trapz(Calc_tmp, x=p_diam, axis=1).astype('float64')
+            moment_denom = trapz_func(Calc_tmp, x=p_diam, axis=1).astype('float64')
             Zv[:, k] = \
                 (moment_denom * wavelength ** 4) / (K_w * np.pi ** 5) * 1e-6
         else:
@@ -1289,11 +1295,11 @@ def _calculate_other_observables(tt, total_hydrometeor, N_0, lambdas, mu,
                 v_tmp = calc_velocity_nssl(rhoe[tt, k], p_diam, hyd_type)
         v_use = v_tmp * rhoa_corr_single
         Calc_tmp2 = Calc_tmp * v_use
-        V_d_numer = np.trapz(Calc_tmp2, axis=1, x=p_diam)
+        V_d_numer = trapz_func(Calc_tmp2, axis=1, x=p_diam)
         V_d_numer = np.where(sub_frac_arr[:, tt, k] == 0, 0, V_d_numer)
         V_d[:, k] = V_d_numer / moment_denom
         Calc_tmp2 = (v_use - np.tile(V_d[:, k], (num_diam, 1)).T) ** 2 * Calc_tmp
-        Calc_tmp2 = np.trapz(Calc_tmp2, axis=1, x=p_diam)
+        Calc_tmp2 = trapz_func(Calc_tmp2, axis=1, x=p_diam)
         sigma_d_numer = np.where(sub_frac_arr[:, tt, k] == 0, 0, Calc_tmp2)
         sigma_d[:, k] = np.sqrt(sigma_d_numer / moment_denom)
         V_d_numer_tot[:, k] += V_d_numer
