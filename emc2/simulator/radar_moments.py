@@ -628,8 +628,23 @@ def calc_radar_micro(instrument, model, z_values, atm_ext, OD_from_sfc=True,
             calc_kws = i_calc_kws
         else:
             calc_kws = None
-            v_tmp = model.vel_param_a[hyd_type] * p_diam ** model.vel_param_b[hyd_type]
-            v_tmp = -v_tmp.magnitude
+            vel_a, vel_b, _ = model._get_terminal_velocity_params(hyd_type, p_diam_array=p_diam)
+            # Handle both scalar (Quantity) and piecewise (ndarray) cases
+            if isinstance(vel_a, np.ndarray):
+                # Piecewise case: check if mass-based (P3 rain)
+                if model.mcphys_scheme == "P3" and hyd_type == "pl":
+                    # Mass-based power law: V = a * m^b where m in grams
+                    rho_water = 1000.0  # kg/m³
+                    x_mass = (np.pi / 6.0) * p_diam ** 3 * rho_water / 1000.0  # mass in grams
+                    v_tmp = vel_a * x_mass ** vel_b
+                else:
+                    # Diameter-based power law: V = a * D^b
+                    v_tmp = vel_a * p_diam ** vel_b
+            else:
+                # Scalar: vel_a is a Quantity with units m^(1-b)/s
+                v_tmp = vel_a * p_diam ** vel_b
+                v_tmp = v_tmp.magnitude
+            v_tmp = -v_tmp
 
         # Microphysics scheme-specific air density correction of terminal velocity
         rhoa_corr = np.ones(model.ds["rho_a"].shape)  # by default, no correction is applied
@@ -776,8 +791,23 @@ def calc_radar_micro(instrument, model, z_values, atm_ext, OD_from_sfc=True,
                 calc_kws = i_calc_kws
             else:
                 calc_kws = None
-                v_tmp = model.vel_param_a[hyd_type] * p_diam ** model.vel_param_b[hyd_type]
-                v_tmp = -v_tmp.magnitude
+                vel_a, vel_b, _ = model._get_terminal_velocity_params(hyd_type, p_diam_array=p_diam)
+                # Handle both scalar (Quantity) and piecewise (ndarray) cases
+                if isinstance(vel_a, np.ndarray):
+                    # Piecewise case: check if mass-based (P3 rain)
+                    if model.mcphys_scheme == "P3" and hyd_type == "pl":
+                        # Mass-based power law: V = a * m^b where m in grams
+                        rho_water = 1000.0  # kg/m³
+                        x_mass = (np.pi / 6.0) * p_diam ** 3 * rho_water / 1000.0  # mass in grams
+                        v_tmp = vel_a * x_mass ** vel_b
+                    else:
+                        # Diameter-based power law: V = a * D^b
+                        v_tmp = vel_a * p_diam ** vel_b
+                else:
+                    # Scalar: vel_a is a Quantity with units m^(1-b)/s
+                    v_tmp = vel_a * p_diam ** vel_b
+                    v_tmp = v_tmp.magnitude
+                v_tmp = -v_tmp
 
             frac_names = "strat_frac_subcolumns_%s" % hyd_type
             n_names = "strat_n_subcolumns_%s" % hyd_type
@@ -785,11 +815,10 @@ def calc_radar_micro(instrument, model, z_values, atm_ext, OD_from_sfc=True,
 
             Vd_tot = model.ds["sub_col_Vd_tot_strat"].values
             if hyd_type == "cl":
-
                 _calc_sigma_d_liq = lambda x: _calc_sigma_d_tot_cl(
                     x, N_0, lambdas, mu, instrument,
                     model.vel_param_a, model.vel_param_b, total_hydrometeor,
-                    p_diam, Vd_tot, num_subcolumns, model.mcphys_scheme, rhoa_corr)
+                    p_diam, Vd_tot, num_subcolumns, model.mcphys_scheme, rhoa_corr, model=model)
 
                 if parallel:
                     if chunk is None:
@@ -1050,7 +1079,8 @@ def calc_radar_moments(instrument, model, is_conv,
 
 def _calc_sigma_d_tot_cl(tt, N_0, lambdas, mu, instrument,
                          vel_param_a, vel_param_b, total_hydrometeor,
-                         p_diam, Vd_tot, num_subcolumns, mcphys_scheme, rhoa_corr):
+                         p_diam, Vd_tot, num_subcolumns, mcphys_scheme, rhoa_corr, 
+                         model=None):
     hyd_type = "cl"
     Dims = Vd_tot.shape
 
@@ -1075,8 +1105,27 @@ def _calc_sigma_d_tot_cl(tt, N_0, lambdas, mu, instrument,
             (num_subcolumns, 1)) * N_D.T
         moment_denom = trapz_func(Calc_tmp, x=p_diam, axis=1).astype('float64')
         if mcphys_scheme.lower() in ["mg2", "mg", "morrison", "nssl", "p3"]:  # power-law velocity schemes for liquid
-            v_tmp = vel_param_a[hyd_type] * p_diam ** vel_param_b[hyd_type]
-        v_tmp = -v_tmp.magnitude.astype('float64')
+            if model is not None:
+                vel_a_arr, vel_b_arr, _ = model._get_terminal_velocity_params(hyd_type, p_diam_array=p_diam)
+                # Handle both scalar (Quantity) and piecewise (ndarray) cases
+                if isinstance(vel_a_arr, np.ndarray):
+                    # Piecewise case: check if mass-based (P3 rain)
+                    if model.mcphys_scheme == "P3" and hyd_type == "pl":
+                        # Mass-based power law: V = a * m^b where m in grams
+                        rho_water = 1000.0  # kg/m³
+                        x_mass = (np.pi / 6.0) * p_diam ** 3 * rho_water / 1000.0  # mass in grams
+                        v_tmp = vel_a_arr * x_mass ** vel_b_arr
+                    else:
+                        # Diameter-based power law: V = a * D^b
+                        v_tmp = vel_a_arr * p_diam ** vel_b_arr
+                else:
+                    # Scalar: extract magnitude from Quantity
+                    v_tmp = vel_a_arr * p_diam ** vel_b_arr
+                    v_tmp = v_tmp.magnitude
+            else:
+                v_tmp = vel_param_a[hyd_type] * p_diam ** vel_param_b[hyd_type]
+                v_tmp = v_tmp.magnitude
+        v_tmp = -v_tmp.astype('float64')
         v_use = v_tmp * rhoa_corr_single
         Calc_tmp2 = (v_use - np.tile(Vd_tot[:, tt, k], (num_diam, 1)).T) ** 2 * Calc_tmp.astype('float64')
         sigma_d_numer[:, k] = trapz_func(Calc_tmp2, x=p_diam, axis=1)
