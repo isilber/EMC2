@@ -4,3 +4,7 @@ pint
 act-atmos
 nc-time-axis
 openpyxl
+matplotlib
+scipy
+dask
+netCDF4
