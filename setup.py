@@ -27,7 +27,7 @@ setup(
     include_package_data=True,
     packages=find_packages(exclude=('tests',)),
 
-    install_requires=[],
+    install_requires=['numpy', 'xarray', 'pint', 'act-atmos', 'nc-time-axis', 'openpyxl'],
 
     classifiers=[
         'Development Status :: 5 - Production/Stable',

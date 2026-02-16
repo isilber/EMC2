@@ -16,5 +16,6 @@ dependencies:
   - flake8
   - act-atmos
   - pint
+  - openpyxl
   - pip:
     - pymiescatt
