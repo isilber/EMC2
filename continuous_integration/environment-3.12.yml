@@ -9,6 +9,7 @@ dependencies:
   - scipy
   - matplotlib
   - netcdf4
+  - xarray
   - pytest
   - pytest-mpl
   - pytest-cov

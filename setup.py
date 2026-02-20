@@ -27,7 +27,20 @@ setup(
     include_package_data=True,
     packages=find_packages(exclude=('tests',)),
 
-    install_requires=['numpy', 'xarray', 'pint', 'act-atmos', 'nc-time-axis', 'openpyxl'],
+    install_requires=[
+        'numpy',
+        'xarray',
+        'pint',
+        'act-atmos',
+        'nc-time-axis',
+        'openpyxl',
+        'matplotlib',
+        'scipy',
+        'dask',
+        'netCDF4',
+    ],
+    
+    python_requires='>=3.10,<3.14',
 
     classifiers=[
         'Development Status :: 5 - Production/Stable',
