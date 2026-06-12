@@ -177,7 +177,7 @@ def lidar_emulate_cosp_phase(instrument, model, eta=0.7, OD_from_sfc=True, phase
     """
     Phase classification method to emulate COSP based on attenuated total backscatter
         (ATB) analysis following Cesana and Chepfer (2013).
-
+ 
     Parameters
     ----------
     instrument: Instrument
@@ -195,7 +195,7 @@ def lidar_emulate_cosp_phase(instrument, model, eta=0.7, OD_from_sfc=True, phase
         and Chepfer (2013).
     atb_cross_coeff: dict or None.
         Dictionary of polynomial coefficients for the estimation of ATB_cross for each
-        hydrometeor type (dict keys).
+        hydrometeor type (dict keys). Applied to particle backscatter only.
         When None, the default coefficients from Cesana and Chepfer (2013) / COSP are used.
     cloud_SR_thresh: float
         Scattering ratio threshold for hydrometeor detection.
@@ -213,39 +213,32 @@ def lidar_emulate_cosp_phase(instrument, model, eta=0.7, OD_from_sfc=True, phase
         all hydrometeors.
     hyd_types: list or None
         list of hydrometeor names to include in calcuation. using default Model subclass types if None.
-
     Returns
     -------
     model: Model
         The model with the added simulated lidar parameters.
     """
     hyd_types = model.set_hyd_types(hyd_types)
-
     if model.process_conv:
         cld_classes = ["conv", "strat"]
     else:
         cld_classes = ["strat"]
-
     if instrument.instrument_str != "HSRL":
         raise ValueError("Instrument must be the 532 nm HSRL (to match CALIOP's operating wavelength)")
-
     if phase_disc_curve is None:
         phase_disc_curve = [9.032e3, -2.136e3, 173.394, -3.951, 0.256, -9.478e-4]
-
     if atb_cross_coeff is None:
         atb_cross_coeff = {'liq': [0.4099, 0.009, 0], 'ice': [0.2904, 0]}
-
     if inc_precip_hyd_atb:
         hyd_classes = {"liq": ["cl", "pl"], "ice": ["ci", "pi"]}
     else:
         hyd_classes = {"liq": ["cl"], "ice": ["ci"]}
-
+    
     ATB_mol = np.tile(model.ds['sigma_180_vol'].values * (1. + 0.0284) * model.ds['tau'].values,
                       (model.num_subcolumns, 1, 1))
-
     beta_p_allhyd = np.zeros_like(model.ds['sub_col_beta_p_tot_strat'].values)
-    beta_p_cross_allhyd = np.zeros_like(model.ds['sub_col_beta_p_tot_strat'].values)
     OD_allhyd = np.zeros_like(model.ds['sub_col_beta_p_tot_strat'].values)
+    
     for cloud_class in cld_classes:
         mask_name = "%s_COSP_phase_mask" % cloud_class
         phase_mask = np.zeros_like(model.ds["strat_q_subcolumns_cl"], dtype=np.uint8)
@@ -253,7 +246,7 @@ def lidar_emulate_cosp_phase(instrument, model, eta=0.7, OD_from_sfc=True, phase
         ATB_cross = {}
         OD = {}
         beta_p = {}
-        beta_p_cross = {}
+        
         for hyd_class in hyd_classes.keys():
             OD[hyd_class] = np.zeros_like(model.ds['sub_col_beta_p_tot_strat'].values)
             beta_p[hyd_class] = np.zeros_like(model.ds['sub_col_beta_p_tot_strat'].values)
@@ -264,27 +257,44 @@ def lidar_emulate_cosp_phase(instrument, model, eta=0.7, OD_from_sfc=True, phase
                 beta_p[hyd_class] += np.nan_to_num(
                     model.ds['sub_col_beta_p_%s_%s' % (hyd_type, cloud_class)].values)
                 OD[hyd_class] += np.nan_to_num(model.ds['sub_col_OD_%s_%s' % (hyd_type, cloud_class)].values)
-            ATB_co[hyd_class] = (np.tile(model.ds['sigma_180_vol'].values, (model.num_subcolumns, 1, 1)) +
-                                 beta_p[hyd_class]) * np.tile(
-                model.ds['tau'].values, (model.num_subcolumns, 1, 1)) * \
-                np.exp(-2 * eta * OD[hyd_class])
-            ATB_cross[hyd_class] = np.polyval(atb_cross_coeff[hyd_class], ATB_co[hyd_class] * 1e3) / 1e3
-            beta_p_cross[hyd_class] = ATB_cross[hyd_class] / np.exp(-2 * eta * OD[hyd_class]) / \
-                np.tile(model.ds['tau'].values, (model.num_subcolumns, 1, 1)) - \
-                np.tile(model.ds['sigma_180_vol'].values * (0.0284 / (1 + 0.0284)), (model.num_subcolumns, 1, 1))
+            
             beta_p_allhyd += beta_p[hyd_class]
-            beta_p_cross_allhyd += beta_p_cross[hyd_class]
             OD_allhyd += OD[hyd_class]
-        ATB_tot = (beta_p["liq"] + beta_p_cross["liq"] + beta_p["ice"] + beta_p_cross["ice"] +
+        
+        # Calculate ATB_cross by applying polynomials to attenuated particle backscatter
+        # using combined OD, then add molecular depolarization
+        OD_tot = OD["liq"] + OD["ice"]
+        atten_factor = np.exp(-2 * eta * OD_tot) * np.tile(model.ds['tau'].values, (model.num_subcolumns, 1, 1))
+        
+        # Attenuated particle backscatter for each phase
+        ATB_particle_liq = beta_p["liq"] * atten_factor
+        ATB_particle_ice = beta_p["ice"] * atten_factor
+        
+        # Apply phase-specific polynomials to particle backscatter only
+        ATB_cross_particle_liq = np.polyval(atb_cross_coeff['liq'], ATB_particle_liq * 1e3) / 1e3
+        ATB_cross_particle_ice = np.polyval(atb_cross_coeff['ice'], ATB_particle_ice * 1e3) / 1e3
+        
+        # Molecular cross-polarized contribution
+        ATB_mol_cross = np.tile(model.ds['sigma_180_vol'].values * (0.0284 / (1. + 0.0284)), 
+                                (model.num_subcolumns, 1, 1)) * atten_factor
+        
+        # Total cross-polarized ATB
+        ATB_cross_tot = ATB_cross_particle_liq + ATB_cross_particle_ice + ATB_mol_cross
+        
+        # Total co+cross ATB (includes molecular co+cross)
+        ATB_tot = (beta_p["liq"] + beta_p["ice"] + 
                    np.tile(model.ds['sigma_180_vol'].values * (1. + 0.0284), (model.num_subcolumns, 1, 1))) * \
-            np.exp(-2 * eta * (OD["liq"] + OD["ice"])) * \
-            np.tile(model.ds['tau'].values, (model.num_subcolumns, 1, 1))
-        ATB_cross_tot = (beta_p_cross["liq"] + beta_p_cross["ice"] + np.tile(model.ds['sigma_180_vol'].values *
-                         (0.0284 / (1. + 0.0284)), (model.num_subcolumns, 1, 1))) * \
-            np.exp(-2 * eta * (OD["liq"] + OD["ice"])) * \
-            np.tile(model.ds['tau'].values, (model.num_subcolumns, 1, 1))
-        del beta_p_cross, ATB_cross, ATB_co, OD, beta_p
-
+            atten_factor
+        
+        # Store for output if requested
+        if output_ATB:
+            ATB_co["liq"] = (beta_p["liq"] + np.tile(model.ds['sigma_180_vol'].values * (1. + 0.0284), 
+                             (model.num_subcolumns, 1, 1))) * atten_factor
+            ATB_co["ice"] = (beta_p["ice"] + np.tile(model.ds['sigma_180_vol'].values * (1. + 0.0284), 
+                             (model.num_subcolumns, 1, 1))) * atten_factor
+            ATB_cross["liq"] = ATB_cross_particle_liq + ATB_mol_cross
+            ATB_cross["ice"] = ATB_cross_particle_ice + ATB_mol_cross
+        
         # Begin cloud detection and phase classification
         SR = ATB_tot / ATB_mol
         if convert_zeros_to_nan:
@@ -300,7 +310,6 @@ def lidar_emulate_cosp_phase(instrument, model, eta=0.7, OD_from_sfc=True, phase
             reflective_mask = np.flip(np.cumsum(np.flip(SR, axis=2) > undef_SR_thresh, axis=2), axis=2)
         reflective_mask = np.where(np.logical_and(SR > undef_SR_thresh, reflective_mask == 1),
                                    0, reflective_mask)
-
         phase_mask = np.where(np.logical_and(np.tile(model.ds[model.T_field].values,
                                                      (model.num_subcolumns, 1, 1)) > 273.15,
                               phase_mask > 0), 1, phase_mask)
@@ -310,20 +319,17 @@ def lidar_emulate_cosp_phase(instrument, model, eta=0.7, OD_from_sfc=True, phase
         phase_mask = np.where(np.logical_and(reflective_mask > 0, phase_mask > 0), 3, phase_mask)
         if convert_zeros_to_nan:
             phase_mask = np.where(phase_mask == 0, np.nan, phase_mask)
-
         model.ds[mask_name] = xr.DataArray(phase_mask, dims=model.ds["strat_q_subcolumns_cl"].dims)
         model.ds[mask_name].attrs["long_name"] = "COSP emulation phase classification mask (%s)" % cloud_class
         model.ds[mask_name].attrs["units"] = "Unitless"
         model.ds[mask_name].attrs["legend"] = ["liquid", "ice", "undef"]
-
-        # save ATB and SR fields for stratiform only
+        
         if output_ATB is True:
             model.ds["COSP_ATBtot_%s" % cloud_class] = xr.DataArray(
                 ATB_tot, dims=model.ds["strat_q_subcolumns_cl"].dims)
             model.ds["COSP_ATBtot_%s" % cloud_class].attrs["long_name"] = \
                 "COSP emulation ATB_tot for %s clouds" % cloud_class
             model.ds["COSP_ATBtot_%s" % cloud_class].attrs["units"] = r"$m^{-1}\ sr^{-1}$"
-
             model.ds["COSP_ATBcross_%s" % cloud_class] = xr.DataArray(
                 ATB_cross_tot, dims=model.ds["strat_q_subcolumns_cl"].dims)
             model.ds["COSP_ATBcross_%s" % cloud_class].attrs["long_name"] = \
@@ -333,19 +339,32 @@ def lidar_emulate_cosp_phase(instrument, model, eta=0.7, OD_from_sfc=True, phase
                 SR, dims=model.ds["strat_q_subcolumns_cl"].dims)
             model.ds["COSP_SR_%s" % cloud_class].attrs["long_name"] = \
                 "COSP emulation scattering ratio for %s clouds" % cloud_class
-            model.ds["COSP_SR_%s" % cloud_class].attrs["units"] = r"$m^{-1}\ sr^{-1}$"
-
-    # determine phase_mask for all hydrometeors
-    ATB_tot_allhyd = (beta_p_allhyd + beta_p_cross_allhyd +
+            model.ds["COSP_SR_%s" % cloud_class].attrs["units"] = "Unitless"
+    
+    # Calculate ATB_cross_allhyd correctly using same consistent approach
+    atten_factor_allhyd = np.exp(-2 * eta * OD_allhyd) * np.tile(model.ds['tau'].values, (model.num_subcolumns, 1, 1))
+    
+    # Attenuated particle backscatter for each phase with combined OD
+    ATB_particle_liq_allhyd = beta_p["liq"] * atten_factor_allhyd
+    ATB_particle_ice_allhyd = beta_p["ice"] * atten_factor_allhyd
+    
+    # Apply phase-specific polynomials
+    ATB_cross_particle_liq_allhyd = np.polyval(atb_cross_coeff['liq'], ATB_particle_liq_allhyd * 1e3) / 1e3
+    ATB_cross_particle_ice_allhyd = np.polyval(atb_cross_coeff['ice'], ATB_particle_ice_allhyd * 1e3) / 1e3
+    
+    # Molecular cross-polarized contribution
+    ATB_mol_cross_allhyd = np.tile(model.ds['sigma_180_vol'].values * (0.0284 / (1. + 0.0284)), 
+                                   (model.num_subcolumns, 1, 1)) * atten_factor_allhyd
+    
+    # Total cross-polarized ATB for all hydrometeors
+    ATB_cross_allhyd = ATB_cross_particle_liq_allhyd + ATB_cross_particle_ice_allhyd + ATB_mol_cross_allhyd
+    
+    # Total co+cross ATB for all hydrometeors
+    ATB_tot_allhyd = (beta_p_allhyd + 
                       np.tile(model.ds['sigma_180_vol'].values * (1. + 0.0284), (model.num_subcolumns, 1, 1))) * \
-        np.exp(-2 * eta * OD_allhyd) * \
-        np.tile(model.ds['tau'].values, (model.num_subcolumns, 1, 1))
-    ATB_cross_allhyd = (beta_p_cross_allhyd + np.tile(model.ds['sigma_180_vol'].values *
-                        (0.0284 / (1. + 0.0284)), (model.num_subcolumns, 1, 1))) * \
-        np.exp(-2 * eta * OD_allhyd) * \
-        np.tile(model.ds['tau'].values, (model.num_subcolumns, 1, 1))
-
-    # Begin cloud detection and phase classification
+        atten_factor_allhyd
+    
+    # Begin cloud detection and phase classification for all hydrometeors
     mask_name = "COSP_phase_mask_all_hyd"
     SR_allhyd = ATB_tot_allhyd / ATB_mol
     if convert_zeros_to_nan:
@@ -362,7 +381,6 @@ def lidar_emulate_cosp_phase(instrument, model, eta=0.7, OD_from_sfc=True, phase
         reflective_mask = np.flip(np.cumsum(np.flip(SR_allhyd, axis=2) > undef_SR_thresh, axis=2), axis=2)
     reflective_mask = np.where(np.logical_and(SR_allhyd > undef_SR_thresh, reflective_mask == 1),
                                0, reflective_mask)
-
     phase_mask = np.where(np.logical_and(np.tile(model.ds[model.T_field].values,
                                                  (model.num_subcolumns, 1, 1)) > 273.15,
                           phase_mask > 0), 1, phase_mask)
@@ -372,7 +390,6 @@ def lidar_emulate_cosp_phase(instrument, model, eta=0.7, OD_from_sfc=True, phase
     phase_mask = np.where(np.logical_and(reflective_mask > 0, phase_mask > 0), 3, phase_mask)
     if convert_zeros_to_nan:
         phase_mask = np.where(phase_mask == 0, np.nan, phase_mask)
-
     model.ds[mask_name] = xr.DataArray(phase_mask, dims=model.ds["strat_q_subcolumns_cl"].dims)
     model.ds[mask_name].attrs["long_name"] = "COSP emulation phase classification mask (convective + stratiform)"
     model.ds[mask_name].attrs["units"] = "Unitless"
@@ -383,7 +400,6 @@ def lidar_emulate_cosp_phase(instrument, model, eta=0.7, OD_from_sfc=True, phase
         model.ds["COSP_ATBtot_all_hyd"].attrs["long_name"] = \
             "COSP emulation ATB_tot (convective + stratiform)"
         model.ds["COSP_ATBtot_all_hyd"].attrs["units"] = r"$m^{-1}\ sr^{-1}$"
-
         model.ds["COSP_ATBcross_all_hyd"] = xr.DataArray(
             ATB_cross_allhyd, dims=model.ds["strat_q_subcolumns_cl"].dims)
         model.ds["COSP_ATBcross_all_hyd"].attrs["long_name"] = \
@@ -393,8 +409,7 @@ def lidar_emulate_cosp_phase(instrument, model, eta=0.7, OD_from_sfc=True, phase
             SR_allhyd, dims=model.ds["strat_q_subcolumns_cl"].dims)
         model.ds["COSP_SR_all_hyd"].attrs["long_name"] = \
             "COSP emulation scattering ratio (convective + stratiform)"
-        model.ds["COSP_SR_all_hyd"].attrs["units"] = r"$m^{-1}\ sr^{-1}$"
-
+        model.ds["COSP_SR_all_hyd"].attrs["units"] = "Unitless"
     return model
 
 
