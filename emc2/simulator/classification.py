@@ -238,7 +238,9 @@ def lidar_emulate_cosp_phase(instrument, model, eta=0.7, OD_from_sfc=True, phase
                       (model.num_subcolumns, 1, 1))
     beta_p_allhyd = np.zeros_like(model.ds['sub_col_beta_p_tot_strat'].values)
     OD_allhyd = np.zeros_like(model.ds['sub_col_beta_p_tot_strat'].values)
-    
+    beta_p_liq_allhyd = np.zeros_like(model.ds['sub_col_beta_p_tot_strat'].values)
+    beta_p_ice_allhyd = np.zeros_like(model.ds['sub_col_beta_p_tot_strat'].values)
+
     for cloud_class in cld_classes:
         mask_name = "%s_COSP_phase_mask" % cloud_class
         phase_mask = np.zeros_like(model.ds["strat_q_subcolumns_cl"], dtype=np.uint8)
@@ -260,6 +262,8 @@ def lidar_emulate_cosp_phase(instrument, model, eta=0.7, OD_from_sfc=True, phase
             
             beta_p_allhyd += beta_p[hyd_class]
             OD_allhyd += OD[hyd_class]
+        beta_p_liq_allhyd += beta_p["liq"]
+        beta_p_ice_allhyd += beta_p["ice"]
         
         # Calculate ATB_cross by applying polynomials to attenuated particle backscatter
         # using combined OD, then add molecular depolarization
@@ -345,8 +349,8 @@ def lidar_emulate_cosp_phase(instrument, model, eta=0.7, OD_from_sfc=True, phase
     atten_factor_allhyd = np.exp(-2 * eta * OD_allhyd) * np.tile(model.ds['tau'].values, (model.num_subcolumns, 1, 1))
     
     # Attenuated particle backscatter for each phase with combined OD
-    ATB_particle_liq_allhyd = beta_p["liq"] * atten_factor_allhyd
-    ATB_particle_ice_allhyd = beta_p["ice"] * atten_factor_allhyd
+    ATB_particle_liq_allhyd = beta_p_liq_allhyd * atten_factor_allhyd
+    ATB_particle_ice_allhyd = beta_p_ice_allhyd * atten_factor_allhyd
     
     # Apply phase-specific polynomials
     ATB_cross_particle_liq_allhyd = np.polyval(atb_cross_coeff['liq'], ATB_particle_liq_allhyd * 1e3) / 1e3
