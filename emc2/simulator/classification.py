@@ -1,4 +1,3 @@
-from EMC2.emc2.core import model
 import xarray as xr
 import numpy as np
 
