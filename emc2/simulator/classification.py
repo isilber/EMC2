@@ -262,8 +262,8 @@ def lidar_emulate_cosp_phase(instrument, model, eta=0.7, OD_from_sfc=True, phase
             
             beta_p_allhyd += beta_p[hyd_class]
             OD_allhyd += OD[hyd_class]
-            beta_p_liq_allhyd += beta_p["liq"]
-            beta_p_ice_allhyd += beta_p["ice"]
+        beta_p_liq_allhyd += beta_p["liq"]
+        beta_p_ice_allhyd += beta_p["ice"]
         
         # Calculate ATB_cross by applying polynomials to attenuated particle backscatter
         # using combined OD, then add molecular depolarization
