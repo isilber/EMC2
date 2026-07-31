@@ -1,7 +1,12 @@
+import functools
+import os
+from concurrent.futures import ProcessPoolExecutor
+import dask.bag as db
+from dask.diagnostics import ProgressBar
 import numpy as np
 import xarray as xr
-import dask.bag as db
 from time import time
+from tqdm.auto import tqdm
 
 
 def set_convective_sub_col_frac(model, hyd_type, N_columns=None, use_rad_logic=True,
@@ -70,12 +75,15 @@ def set_convective_sub_col_frac(model, hyd_type, N_columns=None, use_rad_logic=T
         if len(data_frac.shape) == 1:
             data_frac = data_frac[np.newaxis, :]
 
-        conv_profs = np.zeros((model.num_subcolumns, data_frac.shape[0], data_frac.shape[1]),
-                              dtype=bool)
-        for i in range(1, model.num_subcolumns + 1):
-            for k in range(data_frac.shape[1]):
-                mask = np.where(data_frac[:, k] == i)[0]
-                conv_profs[0:i, mask, k] = True
+        # Keep the old conv prof allocation code for now, but it can be replaced with the following line:
+        if False:
+            conv_profs = np.zeros((model.num_subcolumns, data_frac.shape[0], data_frac.shape[1]),
+                                dtype=bool)
+            for i in range(1, model.num_subcolumns + 1):
+                for k in range(data_frac.shape[1]):
+                    mask = np.where(data_frac[:, k] == i)[0]
+                    conv_profs[0:i, mask, k] = True
+        conv_profs = (np.arange(1, model.num_subcolumns + 1)[:, None, None] <= data_frac[None, :, :])
         model.ds[("conv_frac_subcolumns_" + hyd_type)] = xr.DataArray(
             conv_profs, dims=('subcolumn', my_dims[0], my_dims[1]))
     model.ds[("conv_frac_subcolumns_" + hyd_type)].attrs["units"] = "0 = no, 1 = yes"
@@ -105,13 +113,14 @@ def set_stratiform_sub_col_frac(model, N_columns=None, use_rad_logic=True, paral
         Therefore, after those are generated this must either be
         equal to None or the number of subcolumns in the model. Setting this to None will
         use the number of subcolumns in the model parameter.
-    parallel: bool
-        If True, use parallelism in calculating lidar parameters.
+    parallel: bool or str
+        If True or 'dask', use Dask bag for parallelism (supports multi-node HPC
+        via a distributed Dask scheduler). If 'processes', use ProcessPoolExecutor
+        (faster on single-node workstations). If False, run serially.
     chunk: int or None
-        The number of entries to process in one parallel loop. None will send all of
-        the entries to the Dask worker queue at once. Sometimes, Dask will freeze if
-        too many tasks are sent at once due to memory issues, so adjusting this number
-        might be needed if that happens.
+        When parallel='processes', the chunksize hint for ProcessPoolExecutor.map
+        (how many time steps are batched per worker). None auto-sizes to
+        max(1, t_dim // cpu_count()). Ignored when parallel=True or 'dask'.
     q_trunc_thresh: float
         truncation value for q. Smaller values will be treated as 0.
 
@@ -180,30 +189,26 @@ def set_stratiform_sub_col_frac(model, N_columns=None, use_rad_logic=True, paral
         I_min = np.argmin(cld_2_assigns, axis=0)
         I_max = np.argmax(cld_2_assigns, axis=0)
 
-        _allocate_strat_sub_cols = lambda x: _allocate_strat_sub_col(
-            x, cld_2_assigns, I_min, I_max, conv_profs,
-            full_overcast_cl_ci, data_frac1, data_frac2, N_columns, overlapping_cloud)
+        _allocate_strat_sub_cols = functools.partial(
+            _allocate_strat_sub_col,
+            cld_2_assigns=cld_2_assigns, I_min=I_min, I_max=I_max,
+            conv_profs=conv_profs, full_overcast_cl_ci=full_overcast_cl_ci,
+            data_frac1=data_frac1, data_frac2=data_frac2, N_columns=N_columns,
+            overlapping_cloud=overlapping_cloud)
 
         t_dim = data_frac1.shape[0]
-        if parallel:
-            print("Now performing parallel stratiform hydrometeor allocation in subcolumns")
-            if chunk is None:
-                tt_bag = db.from_sequence(np.arange(0, t_dim, 1))
+        if parallel == 'processes':
+            chunksize = chunk if chunk is not None else max(1, t_dim // (os.cpu_count() or 1))
+            with ProcessPoolExecutor() as pool:
+                my_tuple = list(tqdm(pool.map(_allocate_strat_sub_cols, range(t_dim), chunksize=chunksize),
+                                     total=t_dim, desc="stratiform allocation"))
+        elif parallel:
+            print("stratiform allocation (Dask):")
+            tt_bag = db.from_sequence(range(t_dim))
+            with ProgressBar():
                 my_tuple = tt_bag.map(_allocate_strat_sub_cols).compute()
-            else:
-                my_tuple = []
-                j = 0
-                while j < t_dim:
-                    if j + chunk >= t_dim:
-                        ind_max = t_dim
-                    else:
-                        ind_max = j + chunk
-                    print("Stage 1 of 2: Processing columns %d-%d out of %d" % (j, ind_max, t_dim))
-                    tt_bag = db.from_sequence(np.arange(j, ind_max, 1))
-                    my_tuple += tt_bag.map(_allocate_strat_sub_cols).compute()
-                    j += chunk
         else:
-            my_tuple = [x for x in map(_allocate_strat_sub_cols, np.arange(0, t_dim, 1))]
+            my_tuple = list(map(_allocate_strat_sub_cols, range(t_dim)))
 
         full_overcast_cl_ci += np.sum([x[0] for x in my_tuple])
         strat_profs1 = np.stack([x[1] for x in my_tuple], axis=1)
@@ -252,13 +257,14 @@ def set_precip_sub_col_frac(model, is_conv, N_columns=None, use_rad_logic=True,
         When True using the cloud fraction utilized in a model radiative scheme. Otherwise,
         using the microphysics scheme (note that these schemes do not necessarily
         use exactly the same cloud fraction logic).
-    parallel: bool
-        If True, use parallelism in calculating lidar parameters.
+    parallel: bool or str
+        If True or 'dask', use Dask bag for parallelism (supports multi-node HPC
+        via a distributed Dask scheduler). If 'processes', use ProcessPoolExecutor
+        (faster on single-node workstations). If False, run serially.
     chunk: int or None
-        The number of entries to process in one parallel loop. None will send all of
-        the entries to the Dask worker queue at once. Sometimes, Dask will freeze if
-        too many tasks are sent at once due to memory issues, so adjusting this number
-        might be needed if that happens.
+        When parallel='processes', the chunksize hint for ProcessPoolExecutor.map
+        (how many time steps are batched per worker). None auto-sizes to
+        max(1, t_dim // cpu_count()). Ignored when parallel=True or 'dask'.
     ice_hyd_type: str
         The ice hydrometeor type to include in the subcolumn distribution for precipitation
     q_trunc_thresh: float
@@ -367,30 +373,25 @@ def set_precip_sub_col_frac(model, is_conv, N_columns=None, use_rad_logic=True,
         precip_exist = np.stack([frac > 0 for frac in data_frac])
         PF_val = np.max(np.stack(data_frac), axis=0)
         cond = [strat_profs, ~strat_profs]
-        _allocate_precip_sub_cols = lambda x: _allocate_precip_sub_col(
-            x, cond, N_columns, data_frac, PF_val,
-            precip_exist, full_overcast_pl_pi, overlapping_cloud)
+        _allocate_precip_sub_cols = functools.partial(
+            _allocate_precip_sub_col,
+            cond=cond, N_columns=N_columns, data_frac=data_frac, PF_val=PF_val,
+            precip_exist=precip_exist, full_overcast_pl_pi=full_overcast_pl_pi,
+            overlapping_cloud=overlapping_cloud)
 
         t_dim = data_frac[0].shape[0]
-        if parallel:
-            print("Now performing parallel %s precipitation allocation in subcolumns" % precip_type)
-            if chunk is None:
-                tt_bag = db.from_sequence(np.arange(0, t_dim, 1))
+        if parallel == 'processes':
+            chunksize = chunk if chunk is not None else max(1, t_dim // (os.cpu_count() or 1))
+            with ProcessPoolExecutor() as pool:
+                my_tuple = list(tqdm(pool.map(_allocate_precip_sub_cols, range(t_dim), chunksize=chunksize),
+                                     total=t_dim, desc="%s precip allocation" % precip_type))
+        elif parallel:
+            print("%s precip allocation (Dask):" % precip_type)
+            tt_bag = db.from_sequence(range(t_dim))
+            with ProgressBar():
                 my_tuple = tt_bag.map(_allocate_precip_sub_cols).compute()
-            else:
-                my_tuple = []
-                j = 0
-                while j < t_dim:
-                    if j + chunk >= t_dim:
-                        ind_max = t_dim
-                    else:
-                        ind_max = j + chunk
-                    print("Stage 1 of 2: Processing columns %d-%d out of %d" % (j, ind_max, t_dim))
-                    tt_bag = db.from_sequence(np.arange(j, ind_max, 1))
-                    my_tuple += tt_bag.map(_allocate_precip_sub_cols).compute()
-                    j += chunk
         else:
-            my_tuple = [x for x in map(_allocate_precip_sub_cols, np.arange(0, t_dim, 1))]
+            my_tuple = list(map(_allocate_precip_sub_cols, range(t_dim)))
 
         full_overcast_pl_pi += np.sum([x[0] for x in my_tuple])
         p_strat_profs = np.stack([x[1] for x in my_tuple], axis=1)
@@ -445,13 +446,14 @@ def set_q_n(model, hyd_type, is_conv=True, qc_flag=False, inv_rel_var=None, use_
         uniformly distributed qc (setting qc_flag to False) to maintain radiation scheme logic.
         Otherwise, using the microphysics scheme (note that these schemes do not necessarily
         use exactly the same cloud fraction logic).
-    parallel: bool
-        If True, use parallelism in calculating lidar parameters.
+    parallel: bool or str
+        If True or 'dask', use Dask bag for parallelism (supports multi-node HPC
+        via a distributed Dask scheduler). If 'processes', use ProcessPoolExecutor
+        (faster on single-node workstations). If False, run serially.
     chunk: int or None
-        The number of entries to process in one parallel loop. None will send all of
-        the entries to the Dask worker queue at once. Sometimes, Dask will freeze if
-        too many tasks are sent at once due to memory issues, so adjusting this number
-        might be needed if that happens.
+        When parallel='processes', the chunksize hint for ProcessPoolExecutor.map
+        (how many time steps are batched per worker). None auto-sizes to
+        max(1, t_dim // cpu_count()). Ignored when parallel=True or 'dask'.
     q_trunc_thresh: float
         truncation value for q. Smaller values will be treated as 0.
 
@@ -532,29 +534,24 @@ def set_q_n(model, hyd_type, is_conv=True, qc_flag=False, inv_rel_var=None, use_
             q_ic_mean = np.where(np.isnan(q_ic_mean), 0, q_ic_mean)
             tot_hyd_in_sub = sub_data_frac.sum(axis=0)
 
-            _distribute_cl_q_n_sub_cols = lambda x: _distribute_cl_q_n(
-                x, sub_data_frac, inv_rel_var, model.num_subcolumns, tot_hyd_in_sub, q_ic_mean)
+            _distribute_cl_q_n_sub_cols = functools.partial(
+                _distribute_cl_q_n,
+                sub_data_frac=sub_data_frac, inv_rel_var=inv_rel_var, N_columns=model.num_subcolumns,
+                tot_hyd_in_sub=tot_hyd_in_sub, q_ic_mean=q_ic_mean)
 
             t_dim = data_frac.shape[0]
-            if parallel:
-                print("Now distributing q in subcolumns in parallel")
-                if chunk is None:
-                    tt_bag = db.from_sequence(np.arange(0, t_dim, 1))
+            if parallel == 'processes':
+                chunksize = chunk if chunk is not None else max(1, t_dim // (os.cpu_count() or 1))
+                with ProcessPoolExecutor() as pool:
+                    my_tuple = list(tqdm(pool.map(_distribute_cl_q_n_sub_cols, range(t_dim), chunksize=chunksize),
+                                         total=t_dim, desc="q distribution"))
+            elif parallel:
+                print("q distribution (Dask):")
+                tt_bag = db.from_sequence(range(t_dim))
+                with ProgressBar():
                     my_tuple = tt_bag.map(_distribute_cl_q_n_sub_cols).compute()
-                else:
-                    my_tuple = []
-                    j = t_dim - 1
-                    while j >= 0:
-                        if j + chunk > t_dim:
-                            ind_max = t_dim
-                        else:
-                            ind_max = j + chunk
-                        print("Stage 1 of 2: Processing columns %d-%d out of %d" % (j, ind_max, t_dim))
-                        tt_bag = db.from_sequence(np.arange(j, ind_max, 1))
-                        my_tuple += tt_bag.map(_distribute_cl_q_n_sub_cols).compute()
-                        j -= chunk
             else:
-                my_tuple = [x for x in map(_distribute_cl_q_n_sub_cols, np.arange(0, t_dim, 1))]
+                my_tuple = list(map(_distribute_cl_q_n_sub_cols, range(t_dim)))
 
             q_profs = np.stack([x for x in my_tuple], axis=1)
 
@@ -609,9 +606,9 @@ def _allocate_strat_sub_col(tt, cld_2_assigns, I_min, I_max, conv_profs,
         elif I_min == I_max:  # This is the case of cl_frac == ci_frac != 1
             I_max = 1
         if overlapping_cloud[tt, j]:
-            overlying_locs = np.zeros((2, strat_profs.shape[1]))
-            overlying_locs1 = np.argwhere(np.logical_and(strat_profs[0, :, j + 1], ~conv_profs[:, tt, j]))
-            overlying_locs2 = np.argwhere(np.logical_and(strat_profs[1, :, j + 1], ~conv_profs[:, tt, j]))
+            overlying_locs1 = np.flatnonzero(np.logical_and(strat_profs[0, :, j + 1], ~conv_profs[:, tt, j]))
+            overlying_locs2 = np.flatnonzero(np.logical_and(strat_profs[1, :, j + 1], ~conv_profs[:, tt, j]))
+            overlying_locs_list = [overlying_locs1, overlying_locs2]
             overlying_num = np.array([len(overlying_locs1), len(overlying_locs2)], dtype=int)
             over_diff = abs(overlying_num[1] - overlying_num[0])
             Iover_min = np.argmin(overlying_num)
@@ -621,17 +618,17 @@ def _allocate_strat_sub_col(tt, cld_2_assigns, I_min, I_max, conv_profs,
             if overlying_num[Iover_min] > cld_2_assign[I_max]:
                 if cld_2_assign[I_max] > 0:
                     rand_locs = _randperm(overlying_num.min(), size=cld_2_assign[I_max])
-                    inds = locals()["overlying_locs%d" % (Iover_min + 1)][rand_locs[0:cld_2_assign[I_min]]]
+                    inds = overlying_locs_list[Iover_min][rand_locs[0:cld_2_assign[I_min]]]
                     strat_profs[I_min, inds, j] = True
-                    inds = locals()["overlying_locs%d" % (Iover_min + 1)][rand_locs]
+                    inds = overlying_locs_list[Iover_min][rand_locs]
                     strat_profs[I_max, inds, j] = True
                 cld_2_assign = np.zeros(2)
             elif overlying_num[Iover_min] > cld_2_assign[I_min]:  # overlying_num[Iover_min] <= cld_2_assign[I_max]
                 if cld_2_assign[I_min] > 0: 
                     rand_locs = _randperm(overlying_num.min(), size=cld_2_assign[I_min])
-                    inds = locals()["overlying_locs%d" % (Iover_min + 1)][rand_locs]
+                    inds = overlying_locs_list[Iover_min][rand_locs]
                     strat_profs[I_min, inds, j] = True
-                    inds = locals()["overlying_locs%d" % (Iover_min + 1)]
+                    inds = overlying_locs_list[Iover_min]
                     strat_profs[I_max, inds, j] = True
                 cld_2_assign[I_min] = 0
                 cld_2_assign[I_max] -= overlying_num[Iover_min]
@@ -645,7 +642,7 @@ def _allocate_strat_sub_col(tt, cld_2_assigns, I_min, I_max, conv_profs,
                     strat_profs[I_max, over_unique_lo, j] = True
                     cld_2_assign[I_max] -= over_diff
             elif overlying_num[Iover_max] > cld_2_assign[I_min]:
-                inds = locals()["overlying_locs%d" % (Iover_min + 1)]
+                inds = overlying_locs_list[Iover_min]
                 strat_profs[I_min, inds, j] = True
                 strat_profs[I_max, inds, j] = True
                 cld_2_assign -= overlying_num[Iover_min]
@@ -666,7 +663,7 @@ def _allocate_strat_sub_col(tt, cld_2_assigns, I_min, I_max, conv_profs,
                     strat_profs[I_max, over_unique_lo, j] = True
                     cld_2_assign[I_max] -= over_diff
             else:
-                inds = locals()["overlying_locs%d" % (Iover_max + 1)]
+                inds = overlying_locs_list[Iover_max]
                 strat_profs[I_min, inds, j] = True
                 strat_profs[I_max, inds, j] = True
                 cld_2_assign -= overlying_num[Iover_max]
