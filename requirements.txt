@@ -7,4 +7,6 @@ openpyxl
 matplotlib
 scipy
 dask
+numba
+tqdm
 netCDF4

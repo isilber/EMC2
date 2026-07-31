@@ -37,6 +37,8 @@ setup(
         'matplotlib',
         'scipy',
         'dask',
+        'numba',
+        'tqdm',
         'netCDF4',
     ],
     
