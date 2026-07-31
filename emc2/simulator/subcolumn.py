@@ -1,3 +1,6 @@
+import functools
+import os
+from concurrent.futures import ProcessPoolExecutor
 import numpy as np
 import xarray as xr
 import dask.bag as db
@@ -70,12 +73,15 @@ def set_convective_sub_col_frac(model, hyd_type, N_columns=None, use_rad_logic=T
         if len(data_frac.shape) == 1:
             data_frac = data_frac[np.newaxis, :]
 
-        conv_profs = np.zeros((model.num_subcolumns, data_frac.shape[0], data_frac.shape[1]),
-                              dtype=bool)
-        for i in range(1, model.num_subcolumns + 1):
-            for k in range(data_frac.shape[1]):
-                mask = np.where(data_frac[:, k] == i)[0]
-                conv_profs[0:i, mask, k] = True
+        # Keep the old conv prof allocation code for now, but it can be replaced with the following line:
+        if False:
+            conv_profs = np.zeros((model.num_subcolumns, data_frac.shape[0], data_frac.shape[1]),
+                                dtype=bool)
+            for i in range(1, model.num_subcolumns + 1):
+                for k in range(data_frac.shape[1]):
+                    mask = np.where(data_frac[:, k] == i)[0]
+                    conv_profs[0:i, mask, k] = True
+        conv_profs = (np.arange(1, model.num_subcolumns + 1)[:, None, None] <= data_frac[None, :, :])
         model.ds[("conv_frac_subcolumns_" + hyd_type)] = xr.DataArray(
             conv_profs, dims=('subcolumn', my_dims[0], my_dims[1]))
     model.ds[("conv_frac_subcolumns_" + hyd_type)].attrs["units"] = "0 = no, 1 = yes"
@@ -609,9 +615,9 @@ def _allocate_strat_sub_col(tt, cld_2_assigns, I_min, I_max, conv_profs,
         elif I_min == I_max:  # This is the case of cl_frac == ci_frac != 1
             I_max = 1
         if overlapping_cloud[tt, j]:
-            overlying_locs = np.zeros((2, strat_profs.shape[1]))
-            overlying_locs1 = np.argwhere(np.logical_and(strat_profs[0, :, j + 1], ~conv_profs[:, tt, j]))
-            overlying_locs2 = np.argwhere(np.logical_and(strat_profs[1, :, j + 1], ~conv_profs[:, tt, j]))
+            overlying_locs1 = np.flatnonzero(np.logical_and(strat_profs[0, :, j + 1], ~conv_profs[:, tt, j]))
+            overlying_locs2 = np.flatnonzero(np.logical_and(strat_profs[1, :, j + 1], ~conv_profs[:, tt, j]))
+            overlying_locs_list = [overlying_locs1, overlying_locs2]
             overlying_num = np.array([len(overlying_locs1), len(overlying_locs2)], dtype=int)
             over_diff = abs(overlying_num[1] - overlying_num[0])
             Iover_min = np.argmin(overlying_num)
@@ -621,17 +627,17 @@ def _allocate_strat_sub_col(tt, cld_2_assigns, I_min, I_max, conv_profs,
             if overlying_num[Iover_min] > cld_2_assign[I_max]:
                 if cld_2_assign[I_max] > 0:
                     rand_locs = _randperm(overlying_num.min(), size=cld_2_assign[I_max])
-                    inds = locals()["overlying_locs%d" % (Iover_min + 1)][rand_locs[0:cld_2_assign[I_min]]]
+                    inds = overlying_locs_list[Iover_min][rand_locs[0:cld_2_assign[I_min]]]
                     strat_profs[I_min, inds, j] = True
-                    inds = locals()["overlying_locs%d" % (Iover_min + 1)][rand_locs]
+                    inds = overlying_locs_list[Iover_min][rand_locs]
                     strat_profs[I_max, inds, j] = True
                 cld_2_assign = np.zeros(2)
             elif overlying_num[Iover_min] > cld_2_assign[I_min]:  # overlying_num[Iover_min] <= cld_2_assign[I_max]
                 if cld_2_assign[I_min] > 0: 
                     rand_locs = _randperm(overlying_num.min(), size=cld_2_assign[I_min])
-                    inds = locals()["overlying_locs%d" % (Iover_min + 1)][rand_locs]
+                    inds = overlying_locs_list[Iover_min][rand_locs]
                     strat_profs[I_min, inds, j] = True
-                    inds = locals()["overlying_locs%d" % (Iover_min + 1)]
+                    inds = overlying_locs_list[Iover_min]
                     strat_profs[I_max, inds, j] = True
                 cld_2_assign[I_min] = 0
                 cld_2_assign[I_max] -= overlying_num[Iover_min]
@@ -645,7 +651,7 @@ def _allocate_strat_sub_col(tt, cld_2_assigns, I_min, I_max, conv_profs,
                     strat_profs[I_max, over_unique_lo, j] = True
                     cld_2_assign[I_max] -= over_diff
             elif overlying_num[Iover_max] > cld_2_assign[I_min]:
-                inds = locals()["overlying_locs%d" % (Iover_min + 1)]
+                inds = overlying_locs_list[Iover_min]
                 strat_profs[I_min, inds, j] = True
                 strat_profs[I_max, inds, j] = True
                 cld_2_assign -= overlying_num[Iover_min]
@@ -666,7 +672,7 @@ def _allocate_strat_sub_col(tt, cld_2_assigns, I_min, I_max, conv_profs,
                     strat_profs[I_max, over_unique_lo, j] = True
                     cld_2_assign[I_max] -= over_diff
             else:
-                inds = locals()["overlying_locs%d" % (Iover_max + 1)]
+                inds = overlying_locs_list[Iover_max]
                 strat_profs[I_min, inds, j] = True
                 strat_profs[I_max, inds, j] = True
                 cld_2_assign -= overlying_num[Iover_max]
