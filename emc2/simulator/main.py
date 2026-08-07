@@ -9,7 +9,7 @@ from .classification import lidar_classify_phase, lidar_emulate_cosp_phase, rada
 
 def make_simulated_data(model, instrument, N_columns, do_classify=False, unstack_dims=False,
                         skip_subcol_gen=False, finalize_fields=False, calc_spectral_width=True,
-                        subcol_gen_only=False,
+                        subcol_gen_only=False, seed=None,
                         **kwargs):
     """
     This procedure will make all of the subcolumns and simulated data for each model column.
@@ -48,6 +48,14 @@ def make_simulated_data(model, instrument, N_columns, do_classify=False, unstack
         and are the most computationally expensive. Default is True.
     subcol_gen_only: bool
         If True, only returns mass and number distributed among subcolumns and skips moment calculations
+    seed: int or None
+        Random seed for reproducibility of the subcolumn generator. None (default) gives
+        non-reproducible results with fully independent draws — best for production science
+        runs. With an integer seed and parallel=False, a single global seed is applied before
+        the timestep loop (serial-only, statistically independent timesteps). With
+        an integer seed and parallel=True/'processes', each worker seeds with seed+tt
+        (parallel-safe, with a weak cross-timestep correlation). See the seeding note in
+        subcolumn.py for full details.
     Additional keyword arguments are passed into :func:`emc2.simulator.calc_lidar_moments` or
     :func:`emc2.simulator.calc_radar_moments`
 
@@ -105,7 +113,8 @@ def make_simulated_data(model, instrument, N_columns, do_classify=False, unstack
 
         # Subcolumn Generator
         model = set_stratiform_sub_col_frac(
-            model, use_rad_logic=use_rad_logic, N_columns=N_columns, parallel=parallel, chunk=chunk)
+            model, use_rad_logic=use_rad_logic, N_columns=N_columns, parallel=parallel, chunk=chunk,
+            seed=seed)
 
         # Build precip_types excluding cloud-only classes
         precip_types = [h for h in hydrometeor_classes if h not in {"cl", "ci"}]
@@ -115,10 +124,11 @@ def make_simulated_data(model, instrument, N_columns, do_classify=False, unstack
             if not is_conv:
                 model = set_precip_sub_col_frac(
                     model, is_conv=is_conv, use_rad_logic=use_rad_logic, parallel=parallel, chunk=chunk,
-                    precip_types=precip_types)
+                    precip_types=precip_types, seed=seed)
             else:
                 model = set_precip_sub_col_frac(
-                    model, is_conv=is_conv, use_rad_logic=use_rad_logic, parallel=parallel, chunk=chunk)
+                    model, is_conv=is_conv, use_rad_logic=use_rad_logic, parallel=parallel, chunk=chunk,
+                    seed=seed)
 
         # Distribute q and N among subcolumns for each hydrometeor type and convective state
         is_conv_list = (False, True) if process_conv else (False,)
@@ -131,7 +141,8 @@ def make_simulated_data(model, instrument, N_columns, do_classify=False, unstack
                     qc_flag = False
                 model = set_q_n(
                     model, hyd_type, is_conv=is_conv,
-                    qc_flag=qc_flag, use_rad_logic=use_rad_logic, parallel=parallel, chunk=chunk)
+                    qc_flag=qc_flag, use_rad_logic=use_rad_logic, parallel=parallel, chunk=chunk,
+                    seed=seed)
 
     # Skip moment calculations and return only subcolumn-distributed q and N, else continue to simulator
     if subcol_gen_only:

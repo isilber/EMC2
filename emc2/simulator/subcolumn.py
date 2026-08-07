@@ -95,7 +95,7 @@ def set_convective_sub_col_frac(model, hyd_type, N_columns=None, use_rad_logic=T
 
 
 def set_stratiform_sub_col_frac(model, N_columns=None, use_rad_logic=True, parallel=True, chunk=None,
-                                q_trunc_thresh=1e-18):
+                                q_trunc_thresh=1e-18, seed=None):
     """
     Sets the hydrometeor fraction due to stratiform cloud particles in each subcolumn.
 
@@ -123,6 +123,14 @@ def set_stratiform_sub_col_frac(model, N_columns=None, use_rad_logic=True, paral
         max(1, t_dim // cpu_count()). Ignored when parallel=True or 'dask'.
     q_trunc_thresh: float
         truncation value for q. Smaller values will be treated as 0.
+    seed: int or None
+        Random seed for reproducibility. None (default) gives non-reproducible results
+        with fully independent draws — best for production science runs. With an integer
+        seed and parallel=False, a single global seed is set before the timestep loop
+        (serial-only, statistically independent timesteps). With an integer seed
+        and parallel=True/'processes', each worker seeds with seed+tt
+        (parallel-safe, with a weak cross-timestep correlation). See the seeding note
+        above _randperm for full details.
 
     Returns
     -------
@@ -194,7 +202,8 @@ def set_stratiform_sub_col_frac(model, N_columns=None, use_rad_logic=True, paral
             cld_2_assigns=cld_2_assigns, I_min=I_min, I_max=I_max,
             conv_profs=conv_profs, full_overcast_cl_ci=full_overcast_cl_ci,
             data_frac1=data_frac1, data_frac2=data_frac2, N_columns=N_columns,
-            overlapping_cloud=overlapping_cloud)
+            overlapping_cloud=overlapping_cloud,
+            seed=seed if parallel else None)
 
         t_dim = data_frac1.shape[0]
         if parallel == 'processes':
@@ -208,6 +217,8 @@ def set_stratiform_sub_col_frac(model, N_columns=None, use_rad_logic=True, paral
             with ProgressBar():
                 my_tuple = tt_bag.map(_allocate_strat_sub_cols).compute()
         else:
+            if seed is not None:
+                np.random.seed(seed)
             my_tuple = list(map(_allocate_strat_sub_cols, range(t_dim)))
 
         full_overcast_cl_ci += np.sum([x[0] for x in my_tuple])
@@ -236,8 +247,8 @@ def set_stratiform_sub_col_frac(model, N_columns=None, use_rad_logic=True, paral
 
 
 def set_precip_sub_col_frac(model, is_conv, N_columns=None, use_rad_logic=True,
-                            parallel=True, chunk=None, 
-                            precip_types=["pl", "pi"], q_trunc_thresh=1e-18):
+                            parallel=True, chunk=None,
+                            precip_types=["pl", "pi"], q_trunc_thresh=1e-18, seed=None):
     """
     Sets the hydrometeor fraction due to precipitation in each subcolumn. This
     module works for both stratiform and convective precipitation.
@@ -269,6 +280,14 @@ def set_precip_sub_col_frac(model, is_conv, N_columns=None, use_rad_logic=True,
         The ice hydrometeor type to include in the subcolumn distribution for precipitation
     q_trunc_thresh: float
         truncation value for q. Smaller values will be treated as 0.
+    seed: int or None
+        Random seed for reproducibility. None (default) gives non-reproducible results
+        with fully independent draws — best for production science runs. With an integer
+        seed and parallel=False, a single global seed is set before the timestep loop
+        (serial-only, statistically independent timesteps). With an integer seed
+        and parallel=True/'processes', each worker seeds with seed+tt
+        (parallel-safe, with a weak cross-timestep correlation). See the seeding note
+        above _randperm for full details.
 
     Returns
     -------
@@ -377,7 +396,8 @@ def set_precip_sub_col_frac(model, is_conv, N_columns=None, use_rad_logic=True,
             _allocate_precip_sub_col,
             cond=cond, N_columns=N_columns, data_frac=data_frac, PF_val=PF_val,
             precip_exist=precip_exist, full_overcast_pl_pi=full_overcast_pl_pi,
-            overlapping_cloud=overlapping_cloud)
+            overlapping_cloud=overlapping_cloud,
+            seed=seed if parallel else None)
 
         t_dim = data_frac[0].shape[0]
         if parallel == 'processes':
@@ -391,6 +411,8 @@ def set_precip_sub_col_frac(model, is_conv, N_columns=None, use_rad_logic=True,
             with ProgressBar():
                 my_tuple = tt_bag.map(_allocate_precip_sub_cols).compute()
         else:
+            if seed is not None:
+                np.random.seed(seed)
             my_tuple = list(map(_allocate_precip_sub_cols, range(t_dim)))
 
         full_overcast_pl_pi += np.sum([x[0] for x in my_tuple])
@@ -418,7 +440,7 @@ def set_precip_sub_col_frac(model, is_conv, N_columns=None, use_rad_logic=True,
 
 
 def set_q_n(model, hyd_type, is_conv=True, qc_flag=False, inv_rel_var=None, use_rad_logic=True,
-            parallel=True, chunk=None, q_trunc_thresh=1e-18):
+            parallel=True, chunk=None, q_trunc_thresh=1e-18, seed=None):
     """
 
     This function distributes the mixing ratio and number concentration into the subcolumns.
@@ -456,6 +478,14 @@ def set_q_n(model, hyd_type, is_conv=True, qc_flag=False, inv_rel_var=None, use_
         max(1, t_dim // cpu_count()). Ignored when parallel=True or 'dask'.
     q_trunc_thresh: float
         truncation value for q. Smaller values will be treated as 0.
+    seed: int or None
+        Random seed for reproducibility. None (default) gives non-reproducible results
+        with fully independent draws — best for production science runs. With an integer
+        seed and parallel=False, a single global seed is set before the timestep loop
+        (serial-only, statistically independent timesteps). With an integer seed
+        and parallel=True/'processes', each worker seeds with seed+tt
+        (parallel-safe, with a weak cross-timestep correlation). See the seeding note
+        above _randperm for full details.
 
     Returns
     -------
@@ -537,7 +567,8 @@ def set_q_n(model, hyd_type, is_conv=True, qc_flag=False, inv_rel_var=None, use_
             _distribute_cl_q_n_sub_cols = functools.partial(
                 _distribute_cl_q_n,
                 sub_data_frac=sub_data_frac, inv_rel_var=inv_rel_var, N_columns=model.num_subcolumns,
-                tot_hyd_in_sub=tot_hyd_in_sub, q_ic_mean=q_ic_mean)
+                tot_hyd_in_sub=tot_hyd_in_sub, q_ic_mean=q_ic_mean,
+                seed=seed if parallel else None)
 
             t_dim = data_frac.shape[0]
             if parallel == 'processes':
@@ -551,6 +582,8 @@ def set_q_n(model, hyd_type, is_conv=True, qc_flag=False, inv_rel_var=None, use_
                 with ProgressBar():
                     my_tuple = tt_bag.map(_distribute_cl_q_n_sub_cols).compute()
             else:
+                if seed is not None:
+                    np.random.seed(seed)
                 my_tuple = list(map(_distribute_cl_q_n_sub_cols, range(t_dim)))
 
             q_profs = np.stack([x for x in my_tuple], axis=1)
@@ -576,6 +609,33 @@ def set_q_n(model, hyd_type, is_conv=True, qc_flag=False, inv_rel_var=None, use_
     return model
 
 
+# ---------------------------------------------------------------------------
+# RANDOM SEEDING — two modes, both exposed via the `seed` parameter in the
+# public functions (default None = non-reproducible, fully independent draws):
+#
+# seed=None  No seeding; each run produces different results.  Best for
+#            production science runs where statistical independence across
+#            timesteps matters.
+#
+# seed=int, parallel=False  (global seed, serial-only)
+#            np.random.seed(seed) is set once before the timestep loop,
+#            giving a single contiguous RNG stream.  Consecutive timesteps
+#            are statistically independent.  Recommended for testing and
+#            bit-for-bit reproducibility checks in serial mode.
+#            NOT reproducible with parallel=True/'processes' because
+#            Dask threads and subprocesses race on the global RNG state.
+#
+# seed=int, parallel=True/'processes'  (per-timestep seed)
+#            np.random.seed(seed + tt) is called inside each worker so
+#            every timestep always draws from the same RNG state regardless
+#            of execution order.  Fully reproducible under any parallelism
+#            mode; suitable for parallel testing and reproducibility checks.
+#            Trade-off: the RNG restarts each timestep, introducing a weak
+#            structured correlation across timesteps
+#            (worth noting for ensemble studies).
+# ---------------------------------------------------------------------------
+
+
 def _randperm(x, size=None):
     if size is None:
         size = len(x)
@@ -589,7 +649,10 @@ def _setxor(x, y):
 
 
 def _allocate_strat_sub_col(tt, cld_2_assigns, I_min, I_max, conv_profs,
-                            full_overcast_cl_ci, data_frac1, data_frac2, N_columns, overlapping_cloud):
+                            full_overcast_cl_ci, data_frac1, data_frac2, N_columns, overlapping_cloud,
+                            seed=None):
+    if seed is not None:
+        np.random.seed(seed + tt)
 
     strat_profs = np.zeros((2, N_columns, data_frac1.shape[1]), dtype=bool)
 
@@ -681,7 +744,9 @@ def _allocate_strat_sub_col(tt, cld_2_assigns, I_min, I_max, conv_profs,
 
 
 def _allocate_precip_sub_col(tt, cond, N_columns, data_frac, PF_val,
-                             precip_exist, full_overcast_pl_pi, overlapping_cloud):
+                             precip_exist, full_overcast_pl_pi, overlapping_cloud, seed=None):
+    if seed is not None:
+        np.random.seed(seed + tt)
     p_strat_profs = np.zeros(
         (N_columns, data_frac[0].shape[1], len(data_frac)), dtype=bool)
 
@@ -747,7 +812,11 @@ def _allocate_precip_sub_col(tt, cond, N_columns, data_frac, PF_val,
     return full_overcast_pl_pi, p_strat_profs
 
 
-def _distribute_cl_q_n(tt, sub_data_frac, inv_rel_var, N_columns, tot_hyd_in_sub, q_ic_mean):
+def _distribute_cl_q_n(tt, sub_data_frac, inv_rel_var, N_columns, tot_hyd_in_sub, q_ic_mean, seed=None):
+    # Random draws here: np.random.permutation (via _randperm) and np.random.gamma.
+    # See the seeding note above _randperm for reproducibility options.
+    if seed is not None:
+        np.random.seed(seed + tt)
     q_profs = np.zeros((N_columns, q_ic_mean.shape[1]), dtype=float)
     for j in range(q_ic_mean.shape[1]):
         hyd_in_sub_loc = np.where(sub_data_frac[:, tt, j])[0]
