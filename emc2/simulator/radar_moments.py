@@ -566,6 +566,7 @@ def calc_radar_micro(instrument, model, z_values, atm_ext, OD_from_sfc=True,
     V_d_numer_tot = np.zeros(Dims)
     sigma_d_numer_tot = np.zeros(Dims)
 
+    psd_cache = {}  # Cache PSD params to avoid recomputation in spectral width pass
     for hyd_type in hyd_types:
         print(f"Generating strat radar moemnts for hyd class {hyd_type} "
               f"({model.rad_scheme_family} rad; {model.mcphys_scheme} mcphys; Mie={int(mie_for_ice)})")
@@ -591,6 +592,7 @@ def calc_radar_micro(instrument, model, z_values, atm_ext, OD_from_sfc=True,
         N_0 = fits_ds["N_0"].values
         lambdas = fits_ds["lambda"].values
         mu = fits_ds["mu"].values
+        psd_cache[hyd_type] = (N_0, lambdas, mu)
         total_hydrometeor = model.ds[frac_names].values * model.ds[n_names].values
 
         beta_pv = None
@@ -787,11 +789,7 @@ def calc_radar_micro(instrument, model, z_values, atm_ext, OD_from_sfc=True,
         print("Now calculating total spectral width (this may take some time)")
         for hyd_type in hyd_types:
 
-            # set PSD parameters based on microphysics scheme and hydrometeor class
-            fits_ds = calc_and_set_psd_params(model, hyd_type, **kwargs)
-            N_0 = fits_ds["N_0"].values
-            lambdas = fits_ds["lambda"].values
-            mu = fits_ds["mu"].values
+            N_0, lambdas, mu = psd_cache[hyd_type]  # Retrieve cached PSD parameters
 
             if np.isin(hyd_type, optional_ice_classes):
                 if mie_for_ice:
