@@ -889,14 +889,12 @@ def _calc_strat_lidar_properties(tt, N_0, lambdas, mu, p_diam, total_hydrometeor
     if (hyd_type == 'ci') & (mcphys_scheme == "P3"):
         if not calc_kws["mie_for_ice"]:
             tiled_arr = _set_p3_tiled_arrays(tt, calc_kws, Dims, p_diam, include_vt=False)
-        zero_arr = np.zeros(p_diam.size)
 
     if tt % 50 == 0:
         print('Stratiform moment for class %s progress: %d/%d' % (hyd_type, tt, Dims[1]))
     for k in range(Dims[2]):
         if np.all(total_hydrometeor[:, tt, k] == 0):
             continue
-        N_D = []
         if (hyd_type == 'ci') & (mcphys_scheme == "P3"):  # no N0 etc subcol dim (subcol q filter applies below)
             if not calc_kws["mie_for_ice"]:
                 beta_p = tiled_arr["beta_p"][k, :]
@@ -905,22 +903,15 @@ def _calc_strat_lidar_properties(tt, N_0, lambdas, mu, p_diam, total_hydrometeor
             lambda_tmp = lambdas[tt, k]
             mu_tmp = mu[tt, k]
             N_D_tmp = N_0_tmp * p_diam ** mu_tmp * np.exp(-lambda_tmp * p_diam)
-        for i in range(num_subcolumns):
-            if (hyd_type == 'ci') & (mcphys_scheme == "P3"):
-                if sub_frac_arr[i, tt, k] == 1:
-                    N_D.append(N_D_tmp)   # use subcol q to decide N_D population
-                else:
-                    N_D.append(zero_arr)  # no hydrometeors in subcolumn
-            else:
-                N_0_tmp = N_0[i, tt, k]
-                lambda_tmp = lambdas[i, tt, k]
-                mu_tmp = mu[i, tt, k]
-                N_D.append(N_0_tmp * p_diam ** mu_tmp * np.exp(-lambda_tmp * p_diam))
-        N_D = np.stack(N_D, axis=0)
+            frac_k = sub_frac_arr[:, tt, k]  # use subcol q to decide N_D population
+            N_D = np.where(frac_k[:, None] == 1, N_D_tmp[None, :], 0.)
+        else:
+            N_0_k = N_0[:, tt, k]
+            lambda_k = lambdas[:, tt, k]
+            mu_k = mu[:, tt, k]
+            N_D = N_0_k[:, None] * p_diam[None, :] ** mu_k[:, None] * np.exp(-lambda_k[:, None] * p_diam[None, :])
 
-        Calc_tmp = np.tile(beta_p, (num_subcolumns, 1)) * N_D
-        beta_p_strat[:, k] = trapz_func(Calc_tmp, x=D, axis=1).astype('float64')
-        Calc_tmp = np.tile(alpha_p, (num_subcolumns, 1)) * N_D
-        alpha_p_strat[:, k] = trapz_func(Calc_tmp, x=D, axis=1).astype('float64')
+        beta_p_strat[:, k] = trapz_func(beta_p[None, :] * N_D, x=D, axis=1).astype('float64')
+        alpha_p_strat[:, k] = trapz_func(alpha_p[None, :] * N_D, x=D, axis=1).astype('float64')
 
     return beta_p_strat, alpha_p_strat

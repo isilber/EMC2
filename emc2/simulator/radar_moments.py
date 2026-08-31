@@ -1095,14 +1095,10 @@ def _calc_sigma_d_tot_cl(tt, N_0, lambdas, mu, instrument,
             continue
         rhoa_corr_single = rhoa_corr[tt, k]
         N_0_tmp = N_0[:, tt, k].astype('float64')
-        N_0_tmp, d_diam_tmp = np.meshgrid(N_0_tmp, p_diam)
         lambda_tmp = lambdas[:, tt, k].astype('float64')
-        lambda_tmp, d_diam_tmp = np.meshgrid(lambda_tmp, p_diam)
-        mu_tmp = mu[:, tt, k] * np.ones_like(lambda_tmp)
-        N_D = N_0_tmp * d_diam_tmp ** mu_tmp * np.exp(-lambda_tmp * d_diam_tmp)
-        Calc_tmp = np.tile(
-            instrument.mie_table[hyd_type]["beta_p"].values,
-            (num_subcolumns, 1)) * N_D.T
+        mu_tmp = mu[:, tt, k].astype('float64')
+        N_D = N_0_tmp[:, None] * p_diam[None, :] ** mu_tmp[:, None] * np.exp(-lambda_tmp[:, None] * p_diam[None, :])
+        Calc_tmp = instrument.mie_table[hyd_type]["beta_p"].values[None, :] * N_D
         moment_denom = trapz_func(Calc_tmp, x=p_diam, axis=1).astype('float64')
         if mcphys_scheme.lower() in ["mg2", "mg", "morrison", "nssl", "p3"]:  # power-law velocity schemes for liquid
             if model is not None:
@@ -1213,11 +1209,7 @@ def _calculate_observables_liquid(tt, total_hydrometeor, N_0, lambdas, mu,
         if np.all([np.all(np.isnan(x)) for x in N_0_tmp]):
             continue
 
-        N_D = []
-        for i in range(N_0_tmp.shape[0]):
-            N_D.append(N_0_tmp[i] * p_diam ** mu_tmp[i] * np.exp(-lambda_tmp[i] * p_diam))
-
-        N_D = np.stack(N_D, axis=0)
+        N_D = N_0_tmp[:, None] * p_diam[None, :] ** mu_tmp[:, None] * np.exp(-lambda_tmp[:, None] * p_diam[None, :])
         Calc_tmp = beta_p * N_D
         tmp_od = trapz_func(alpha_p * N_D, x=p_diam, axis=1)
         moment_denom = trapz_func(Calc_tmp, x=p_diam, axis=1).astype('float64')
@@ -1258,7 +1250,6 @@ def _calculate_other_observables(tt, total_hydrometeor, N_0, lambdas, mu,
             continue
         num_diam = len(p_diam)
         rhoa_corr_single = rhoa_corr[tt, k]
-        N_D = []
         if (hyd_type == 'ci') & (mcphys_scheme == "P3"):  # no N0 etc subcol dim (subcol q filter below & psd.py)
             v_tmp = tiled_arr["vt"][k, :]
             if not calc_kws["mie_for_ice"]:
@@ -1267,14 +1258,11 @@ def _calculate_other_observables(tt, total_hydrometeor, N_0, lambdas, mu,
             N_0_tmp = N_0[tt, k]
             lambda_tmp = lambdas[tt, k]
             mu_tmp = mu[tt, k]
-        for i in range(V_d.shape[0]):
-            if (hyd_type == 'ci') & (mcphys_scheme == "P3"):  # mu != 0
-                N_D.append(N_0_tmp * p_diam ** mu_tmp * np.exp(-lambda_tmp * p_diam))  # gamma PSD
-            else:  # subcol dim for N0 and lambda; mu=0
-                N_0_tmp = N_0[i, tt, k]
-                lambda_tmp = lambdas[i, tt, k]
-                N_D.append(N_0_tmp * np.exp(-lambda_tmp * p_diam))  # exponential PSD (mu=0)
-        N_D = np.stack(N_D, axis=0)
+            N_D = np.tile(N_0_tmp * p_diam ** mu_tmp * np.exp(-lambda_tmp * p_diam), (num_subcolumns, 1))  # gamma PSD
+        else:  # subcol dim for N0 and lambda; mu=0
+            N_0_k = N_0[:, tt, k]
+            lambda_k = lambdas[:, tt, k]
+            N_D = N_0_k[:, None] * np.exp(-lambda_k[:, None] * p_diam[None, :])  # exponential PSD (mu=0)
         Calc_tmp = np.tile(beta_p, (num_subcolumns, 1)) * N_D
         tmp_od = np.tile(alpha_p, (num_subcolumns, 1)) * N_D
         tmp_od = trapz_func(tmp_od, x=p_diam, axis=1)
