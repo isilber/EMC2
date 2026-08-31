@@ -2,10 +2,17 @@ import xarray as xr
 import numpy as np
 import dask.bag as db
 import dask.array as da
+from concurrent.futures import ProcessPoolExecutor
+import os
 
 from time import time
 from scipy.interpolate import LinearNDInterpolator
 from scipy.interpolate import RegularGridInterpolator
+
+try:
+    from tqdm.auto import tqdm
+except ImportError:
+    tqdm = lambda x, **kwargs: x
 
 from .attenuation import calc_radar_atm_attenuation
 
@@ -16,6 +23,18 @@ else:
     trapz_func = np.trapz
 from .psd import calc_velocity_nssl, calc_and_set_psd_params
 from ..core.instrument import ureg, quantity
+
+
+class _PoolWorker:
+    """Picklable callable replacing local lambdas for ProcessPoolExecutor compatibility.
+    Wraps: func(tt, *args, **kwargs)"""
+    def __init__(self, func, *args, **kwargs):
+        self.func = func
+        self.args = args
+        self.kwargs = kwargs
+
+    def __call__(self, tt):
+        return self.func(tt, *self.args, **self.kwargs)
 
 
 def calc_total_reflectivity(model, detect_mask=False):
@@ -468,7 +487,7 @@ def calc_radar_bulk(instrument, model, is_conv, p_values, z_values, atm_ext, OD_
 
 def calc_radar_micro(instrument, model, z_values, atm_ext, OD_from_sfc=True,
                      hyd_types=None, mie_for_ice=True, parallel=True, chunk=None,
-                     calc_spectral_width=True,
+                     calc_spectral_width=True, single_pass_spectral_width=True,
                      **kwargs):
     """
     Calculates the first 3 radar moments (reflectivity, mean Doppler velocity and spectral
@@ -497,8 +516,9 @@ def calc_radar_micro(instrument, model, z_values, atm_ext, OD_from_sfc=True,
         This parameter is set to `False` if `mcphys_scheme == P3` since ice shape is integrated into P3,
         which also affects mu, etc. and therefore the bulk LUT behavior in a similar manner to how the P3
         LUTs are integrated into EMC².
-    parallel: bool
-        If True, use parallelism in calculating lidar parameters.
+    parallel: bool or str
+        If True or 'dask', use Dask bag parallelism with task graph scheduling. If 'processes', use
+        ProcessPoolExecutor for single-node multiprocessing with progress bar. If False, compute serially.
     chunk: int or None
         The number of entries to process in one parallel loop. None will send all of
         the entries to the Dask worker queue at once. Sometimes, Dask will freeze if
@@ -507,6 +527,10 @@ def calc_radar_micro(instrument, model, z_values, atm_ext, OD_from_sfc=True,
     calc_spectral_width: bool
         If False, skips spectral width calculations since these are not always needed for an application
         and are the most computationally expensive. Default is True.
+    single_pass_spectral_width: bool
+        If True (default), computes spectral width from variance formula during pass 1 using cached v2_numer
+        integrals, eliminating the second parallel pass. If False, uses original two-pass approach with separate
+        spectral width dispatch. Only relevant when calc_spectral_width=True. Default is True.
     Additonal keyword arguments are passed into
     :py:func:`emc2.simulator.psd.calc_and_set_psd_params`.
     :py:func:`emc2.simulator.lidar_moments.accumulate_attenuation`.
@@ -545,7 +569,9 @@ def calc_radar_micro(instrument, model, z_values, atm_ext, OD_from_sfc=True,
     moment_denom_tot = np.zeros(Dims)
     V_d_numer_tot = np.zeros(Dims)
     sigma_d_numer_tot = np.zeros(Dims)
+    v2_numer_tot = np.zeros(Dims) if (calc_spectral_width and single_pass_spectral_width) else None
 
+    psd_cache = {}  # Cache PSD params to avoid recomputation in spectral width pass
     for hyd_type in hyd_types:
         print(f"Generating strat radar moemnts for hyd class {hyd_type} "
               f"({model.rad_scheme_family} rad; {model.mcphys_scheme} mcphys; Mie={int(mie_for_ice)})")
@@ -571,6 +597,7 @@ def calc_radar_micro(instrument, model, z_values, atm_ext, OD_from_sfc=True,
         N_0 = fits_ds["N_0"].values
         lambdas = fits_ds["lambda"].values
         mu = fits_ds["mu"].values
+        psd_cache[hyd_type] = (N_0, lambdas, mu)
         total_hydrometeor = model.ds[frac_names].values * model.ds[n_names].values
 
         beta_pv = None
@@ -653,12 +680,18 @@ def calc_radar_micro(instrument, model, z_values, atm_ext, OD_from_sfc=True,
                 rhoa_corr = (model.Vd_rhoa_scaling_ref[hyd_type] / model.ds["rho_a"].values) ** 0.54
 
         if hyd_type == "cl":
-            _calc_liquid = lambda x: _calculate_observables_liquid(
-                x, total_hydrometeor, N_0, lambdas, mu,
+            _calc_liquid = _PoolWorker(_calculate_observables_liquid,
+                total_hydrometeor, N_0, lambdas, mu,
                 alpha_p, beta_p, v_tmp, num_subcolumns, instrument, p_diam,
-                rhoa_corr)
-            if parallel:
-                print("Performing parallel radar calculations for %s" % hyd_type)
+                rhoa_corr, calc_v2_numer=(calc_spectral_width and single_pass_spectral_width))
+            if parallel == 'processes':
+                print("Performing parallel radar calculations for %s (ProcessPoolExecutor)" % hyd_type)
+                chunksize = chunk if chunk is not None else max(1, Dims[1] // (os.cpu_count() or 1))
+                with ProcessPoolExecutor() as pool:
+                    my_tuple = list(tqdm(pool.map(_calc_liquid, np.arange(0, Dims[1], 1), chunksize=chunksize),
+                                         total=Dims[1], desc=f"Column-wise radar {hyd_type}"))
+            elif parallel:
+                print("Performing parallel radar calculations for %s (Dask)" % hyd_type)
                 if chunk is None:
                     tt_bag = db.from_sequence(np.arange(0, Dims[1], 1))
                     my_tuple = tt_bag.map(_calc_liquid).compute()
@@ -691,19 +724,29 @@ def calc_radar_micro(instrument, model, z_values, atm_ext, OD_from_sfc=True,
             if calc_spectral_width:
                 model.ds["sub_col_sigma_d_cl_strat"][:, :, :] = np.stack(
                     [x[5] for x in my_tuple], axis=1)
+            
+            if calc_spectral_width and single_pass_spectral_width:
+                v2_numer_tot = np.nan_to_num(
+                    np.stack([x[6] for x in my_tuple], axis=1))
 
             del my_tuple
         else:
             sub_frac_arr = model.ds["strat_frac_subcolumns_%s" % hyd_type].values
-            _calc_other = lambda x: _calculate_other_observables(
-                x, total_hydrometeor, N_0, lambdas, mu, model.num_subcolumns,
+            _calc_other = _PoolWorker(_calculate_other_observables,
+                total_hydrometeor, N_0, lambdas, mu, model.num_subcolumns,
                 beta_p, alpha_p, v_tmp,
                 instrument.wavelength, instrument.K_w,
                 sub_frac_arr, hyd_type, p_diam, beta_pv, rhoe, model.mcphys_scheme,
-                rhoa_corr, calc_kws)
+                rhoa_corr, calc_kws, calc_v2_numer=(calc_spectral_width and single_pass_spectral_width))
 
-            if parallel:
-                print("Doing parallel radar calculation for %s" % hyd_type)
+            if parallel == 'processes':
+                print("Doing parallel radar calculation for %s (ProcessPoolExecutor)" % hyd_type)
+                chunksize = chunk if chunk is not None else max(1, Dims[1] // (os.cpu_count() or 1))
+                with ProcessPoolExecutor() as pool:
+                    my_tuple = list(tqdm(pool.map(_calc_other, np.arange(0, Dims[1], 1), chunksize=chunksize),
+                                         total=Dims[1], desc=f"Column-wise radar {hyd_type}"))
+            elif parallel:
+                print("Doing parallel radar calculation for %s (Dask)" % hyd_type)
                 if chunk is None:
                     tt_bag = db.from_sequence(np.arange(0, Dims[1], 1))
                     my_tuple = tt_bag.map(_calc_other).compute()
@@ -734,6 +777,10 @@ def calc_radar_micro(instrument, model, z_values, atm_ext, OD_from_sfc=True,
             if beta_pv is not None:
                 Zv = np.nan_to_num(np.stack([x[6] for x in my_tuple], axis=1))
                 model.ds["sub_col_Zdr_%s_strat" % hyd_type] = model.ds["sub_col_Ze_%s_strat" % hyd_type] / Zv
+            
+            if calc_spectral_width and single_pass_spectral_width:
+                v2_numer_tot += np.nan_to_num(
+                    np.stack([x[7] for x in my_tuple], axis=1))
 
         if "sub_col_Ze_tot_strat" in model.ds.variables.keys():
             model.ds["sub_col_Ze_tot_strat"] += model.ds["sub_col_Ze_%s_strat" % hyd_type].fillna(0)
@@ -751,15 +798,21 @@ def calc_radar_micro(instrument, model, z_values, atm_ext, OD_from_sfc=True,
     model.ds["sub_col_Vd_tot_strat"] = xr.DataArray(V_d_numer_tot / moment_denom_tot,
                                                     dims=model.ds["sub_col_Ze_tot_strat"].dims)
 
-    if calc_spectral_width:
+    if calc_spectral_width and single_pass_spectral_width:
+        # Compute spectral width using variance formula: σ_d_tot² = E[v²] - (E[v])² = (v2_numer_tot / denom) - Vd_tot²
+        print("Computing total spectral width from variance formula")
+        Vd_tot = model.ds["sub_col_Vd_tot_strat"].values
+        _denom = np.where(moment_denom_tot > 0, moment_denom_tot, np.nan)
+        sigma_d_numer_tot = np.maximum(0, v2_numer_tot / _denom - Vd_tot ** 2) * _denom
+        model.ds["sub_col_sigma_d_tot_strat"] = xr.DataArray(
+            np.sqrt(sigma_d_numer_tot / moment_denom_tot),
+            dims=model.ds["sub_col_Ze_tot_strat"].dims)
+
+    if calc_spectral_width and not single_pass_spectral_width:
         print("Now calculating total spectral width (this may take some time)")
         for hyd_type in hyd_types:
 
-            # set PSD parameters based on microphysics scheme and hydrometeor class
-            fits_ds = calc_and_set_psd_params(model, hyd_type, **kwargs)
-            N_0 = fits_ds["N_0"].values
-            lambdas = fits_ds["lambda"].values
-            mu = fits_ds["mu"].values
+            N_0, lambdas, mu = psd_cache[hyd_type]  # Retrieve cached PSD parameters
 
             if np.isin(hyd_type, optional_ice_classes):
                 if mie_for_ice:
@@ -815,12 +868,17 @@ def calc_radar_micro(instrument, model, z_values, atm_ext, OD_from_sfc=True,
 
             Vd_tot = model.ds["sub_col_Vd_tot_strat"].values
             if hyd_type == "cl":
-                _calc_sigma_d_liq = lambda x: _calc_sigma_d_tot_cl(
-                    x, N_0, lambdas, mu, instrument,
+                _calc_sigma_d_liq = _PoolWorker(_calc_sigma_d_tot_cl,
+                    N_0, lambdas, mu, instrument,
                     model.vel_param_a, model.vel_param_b, total_hydrometeor,
                     p_diam, Vd_tot, num_subcolumns, model.mcphys_scheme, rhoa_corr, model=model)
 
-                if parallel:
+                if parallel == 'processes':
+                    chunksize = chunk if chunk is not None else max(1, Dims[1] // (os.cpu_count() or 1))
+                    with ProcessPoolExecutor() as pool:
+                        sigma_d_numer = list(tqdm(pool.map(_calc_sigma_d_liq, np.arange(0, Dims[1], 1), chunksize=chunksize),
+                                                  total=Dims[1], desc="Stage 2/2: Spectral width (cl)"))
+                elif parallel:
                     if chunk is None:
                         tt_bag = db.from_sequence(np.arange(0, Dims[1], 1))
                         sigma_d_numer = tt_bag.map(_calc_sigma_d_liq).compute()
@@ -842,12 +900,17 @@ def calc_radar_micro(instrument, model, z_values, atm_ext, OD_from_sfc=True,
                 sigma_d_numer_tot = np.nan_to_num(np.stack([x[0] for x in sigma_d_numer], axis=1))
             else:
                 sub_frac_arr = model.ds["strat_frac_subcolumns_%s" % hyd_type].values
-                _calc_sigma = lambda x: _calc_sigma_d_tot(
-                    x, num_subcolumns, v_tmp, N_0, lambdas, mu,
+                _calc_sigma = _PoolWorker(_calc_sigma_d_tot,
+                    num_subcolumns, v_tmp, N_0, lambdas, mu,
                     total_hydrometeor, Vd_tot, sub_frac_arr, p_diam, beta_p,
                     rhoe, hyd_type, model.mcphys_scheme, rhoa_corr, calc_kws)
 
-                if parallel:
+                if parallel == 'processes':
+                    chunksize = chunk if chunk is not None else max(1, Dims[1] // (os.cpu_count() or 1))
+                    with ProcessPoolExecutor() as pool:
+                        sigma_d_numer = list(tqdm(pool.map(_calc_sigma, np.arange(0, Dims[1], 1), chunksize=chunksize),
+                                                  total=Dims[1], desc=f"Stage 2/2: Spectral width ({hyd_type})"))
+                elif parallel:
                     if chunk is None:
                         tt_bag = db.from_sequence(np.arange(0, Dims[1], 1))
                         sigma_d_numer = tt_bag.map(_calc_sigma).compute()
@@ -866,12 +929,13 @@ def calc_radar_micro(instrument, model, z_values, atm_ext, OD_from_sfc=True,
                 else:
                     sigma_d_numer = [x for x in map(_calc_sigma, np.arange(0, Dims[1], 1))]
                 sigma_d_numer_tot += np.nan_to_num(np.stack([x[0] for x in sigma_d_numer], axis=1))
-    else: 
+    
+    if not calc_spectral_width:
         print("User chose to skip spectral width calculations")
  
     model.ds = model.ds.drop_vars(("N_0", "lambda", "mu"))
 
-    if calc_spectral_width:
+    if calc_spectral_width and not single_pass_spectral_width:
         model.ds["sub_col_sigma_d_tot_strat"] = xr.DataArray(np.sqrt(sigma_d_numer_tot / moment_denom_tot),
                                                              dims=model.ds["sub_col_Vd_tot_strat"].dims)
     model = accumulate_attenuation(model, False, z_values, hyd_ext, atm_ext,
@@ -892,7 +956,8 @@ def calc_radar_micro(instrument, model, z_values, atm_ext, OD_from_sfc=True,
 
 def calc_radar_moments(instrument, model, is_conv,
                        OD_from_sfc=True, hyd_types=None, parallel=True, chunk=None, mie_for_ice=False,
-                       use_rad_logic=True, use_empiric_calc=False,calc_spectral_width=True,**kwargs):
+                       use_rad_logic=True, use_empiric_calc=False, calc_spectral_width=True,
+                       single_pass_spectral_width=True, **kwargs):
     """
     Calculates the reflectivity, doppler velocity, and spectral width
     in a given column for the given radar.
@@ -930,6 +995,10 @@ def calc_radar_moments(instrument, model, is_conv,
     calc_spectral_width: bool
         If False, skips spectral width calculations since these are not always needed for an application
         and are the most computationally expensive. Default is True.
+    single_pass_spectral_width: bool
+        If True (default), computes spectral width from variance formula during pass 1 using cached v2_numer
+        integrals when calc_spectral_width=True, eliminating the second parallel pass. If False, uses original
+        two-pass approach with separate spectral width dispatch. Default is True.
     mie_for_ice: bool
         If True, using bulk LUTs generated using solid ice spheres (Mie) calculations (e.g., consistent
         with the ice treatment in MG1 through MG2).
@@ -1027,7 +1096,8 @@ def calc_radar_moments(instrument, model, is_conv,
         calc_radar_micro(instrument, model, z_values,
                          atm_ext, OD_from_sfc=OD_from_sfc,
                          hyd_types=hyd_types, mie_for_ice=mie_for_ice,
-                         parallel=parallel, chunk=chunk, calc_spectral_width=calc_spectral_width,**kwargs)
+                         parallel=parallel, chunk=chunk, calc_spectral_width=calc_spectral_width,
+                         single_pass_spectral_width=single_pass_spectral_width, **kwargs)
 
     for hyd_type in hyd_types:
         model.ds["sub_col_Ze_%s_%s" % (hyd_type, cloud_str)] = 10 * np.log10(
@@ -1095,14 +1165,10 @@ def _calc_sigma_d_tot_cl(tt, N_0, lambdas, mu, instrument,
             continue
         rhoa_corr_single = rhoa_corr[tt, k]
         N_0_tmp = N_0[:, tt, k].astype('float64')
-        N_0_tmp, d_diam_tmp = np.meshgrid(N_0_tmp, p_diam)
         lambda_tmp = lambdas[:, tt, k].astype('float64')
-        lambda_tmp, d_diam_tmp = np.meshgrid(lambda_tmp, p_diam)
-        mu_tmp = mu[:, tt, k] * np.ones_like(lambda_tmp)
-        N_D = N_0_tmp * d_diam_tmp ** mu_tmp * np.exp(-lambda_tmp * d_diam_tmp)
-        Calc_tmp = np.tile(
-            instrument.mie_table[hyd_type]["beta_p"].values,
-            (num_subcolumns, 1)) * N_D.T
+        mu_tmp = mu[:, tt, k].astype('float64')
+        N_D = N_0_tmp[:, None] * p_diam[None, :] ** mu_tmp[:, None] * np.exp(-lambda_tmp[:, None] * p_diam[None, :])
+        Calc_tmp = instrument.mie_table[hyd_type]["beta_p"].values[None, :] * N_D
         moment_denom = trapz_func(Calc_tmp, x=p_diam, axis=1).astype('float64')
         if mcphys_scheme.lower() in ["mg2", "mg", "morrison", "nssl", "p3"]:  # power-law velocity schemes for liquid
             if model is not None:
@@ -1185,13 +1251,14 @@ def _calc_sigma_d_tot(tt, num_subcolumns, v_tmp, N_0, lambdas, mu,
 
 def _calculate_observables_liquid(tt, total_hydrometeor, N_0, lambdas, mu,
                                   alpha_p, beta_p, v_tmp, num_subcolumns, instrument, p_diam,
-                                  rhoa_corr):
+                                  rhoa_corr, calc_v2_numer=False):
     height_dims = N_0.shape[2]
     V_d_numer_tot = np.zeros((N_0.shape[0], height_dims))
     V_d = np.zeros((N_0.shape[0], height_dims))
     Ze = np.zeros_like(V_d)
     Zv = np.zeros_like(V_d)
     sigma_d = np.zeros_like(V_d)
+    v2_numer_tot = np.zeros_like(V_d) if calc_v2_numer else None
     moment_denom_tot = np.zeros_like(V_d_numer_tot)
     hyd_ext = np.zeros_like(V_d_numer_tot)
     num_diam = len(p_diam)
@@ -1213,11 +1280,7 @@ def _calculate_observables_liquid(tt, total_hydrometeor, N_0, lambdas, mu,
         if np.all([np.all(np.isnan(x)) for x in N_0_tmp]):
             continue
 
-        N_D = []
-        for i in range(N_0_tmp.shape[0]):
-            N_D.append(N_0_tmp[i] * p_diam ** mu_tmp[i] * np.exp(-lambda_tmp[i] * p_diam))
-
-        N_D = np.stack(N_D, axis=0)
+        N_D = N_0_tmp[:, None] * p_diam[None, :] ** mu_tmp[:, None] * np.exp(-lambda_tmp[:, None] * p_diam[None, :])
         Calc_tmp = beta_p * N_D
         tmp_od = trapz_func(alpha_p * N_D, x=p_diam, axis=1)
         moment_denom = trapz_func(Calc_tmp, x=p_diam, axis=1).astype('float64')
@@ -1233,14 +1296,19 @@ def _calculate_observables_liquid(tt, total_hydrometeor, N_0, lambdas, mu,
         V_d_numer_tot[:, k] += V_d_numer
         moment_denom_tot[:, k] += moment_denom
         hyd_ext[:, k] += tmp_od
+        if calc_v2_numer:
+            v2_numer_tot[:, k] += trapz_func(v_use ** 2 * Calc_tmp, x=p_diam, axis=1)
 
-    return V_d_numer_tot, moment_denom_tot, hyd_ext, Ze, V_d, sigma_d
+    return_vals = [V_d_numer_tot, moment_denom_tot, hyd_ext, Ze, V_d, sigma_d]
+    if calc_v2_numer:
+        return_vals.append(v2_numer_tot)
+    return tuple(return_vals)
 
 
 def _calculate_other_observables(tt, total_hydrometeor, N_0, lambdas, mu,
                                  num_subcolumns, beta_p, alpha_p, v_tmp, wavelength,
                                  K_w, sub_frac_arr, hyd_type, p_diam, beta_pv,
-                                 rhoe, mcphys_scheme, rhoa_corr, calc_kws=None):
+                                 rhoe, mcphys_scheme, rhoa_corr, calc_kws=None, calc_v2_numer=False):
     Dims = sub_frac_arr.shape
     if tt % 100 == 0:
         print("Processing non-`cl` in column %d/%d" % (tt, Dims[1]))
@@ -1251,6 +1319,7 @@ def _calculate_other_observables(tt, total_hydrometeor, N_0, lambdas, mu,
     V_d_numer_tot = np.zeros_like(Ze)
     moment_denom_tot = np.zeros_like(Ze)
     hyd_ext = np.zeros_like(Ze)
+    v2_numer_tot = np.zeros_like(Ze) if calc_v2_numer else None
     if (hyd_type == 'ci') & (mcphys_scheme == "P3"):
         tiled_arr = _set_p3_tiled_arrays(tt, calc_kws, Dims, p_diam)
     for k in range(Dims[2]):
@@ -1258,7 +1327,6 @@ def _calculate_other_observables(tt, total_hydrometeor, N_0, lambdas, mu,
             continue
         num_diam = len(p_diam)
         rhoa_corr_single = rhoa_corr[tt, k]
-        N_D = []
         if (hyd_type == 'ci') & (mcphys_scheme == "P3"):  # no N0 etc subcol dim (subcol q filter below & psd.py)
             v_tmp = tiled_arr["vt"][k, :]
             if not calc_kws["mie_for_ice"]:
@@ -1267,14 +1335,11 @@ def _calculate_other_observables(tt, total_hydrometeor, N_0, lambdas, mu,
             N_0_tmp = N_0[tt, k]
             lambda_tmp = lambdas[tt, k]
             mu_tmp = mu[tt, k]
-        for i in range(V_d.shape[0]):
-            if (hyd_type == 'ci') & (mcphys_scheme == "P3"):  # mu != 0
-                N_D.append(N_0_tmp * p_diam ** mu_tmp * np.exp(-lambda_tmp * p_diam))  # gamma PSD
-            else:  # subcol dim for N0 and lambda; mu=0
-                N_0_tmp = N_0[i, tt, k]
-                lambda_tmp = lambdas[i, tt, k]
-                N_D.append(N_0_tmp * np.exp(-lambda_tmp * p_diam))  # exponential PSD (mu=0)
-        N_D = np.stack(N_D, axis=0)
+            N_D = np.tile(N_0_tmp * p_diam ** mu_tmp * np.exp(-lambda_tmp * p_diam), (num_subcolumns, 1))  # gamma PSD
+        else:  # subcol dim for N0 and lambda; mu=0
+            N_0_k = N_0[:, tt, k]
+            lambda_k = lambdas[:, tt, k]
+            N_D = N_0_k[:, None] * np.exp(-lambda_k[:, None] * p_diam[None, :])  # exponential PSD (mu=0)
         Calc_tmp = np.tile(beta_p, (num_subcolumns, 1)) * N_D
         tmp_od = np.tile(alpha_p, (num_subcolumns, 1)) * N_D
         tmp_od = trapz_func(tmp_od, x=p_diam, axis=1)
@@ -1305,8 +1370,15 @@ def _calculate_other_observables(tt, total_hydrometeor, N_0, lambdas, mu,
         V_d_numer_tot[:, k] += V_d_numer
         moment_denom_tot[:, k] += moment_denom
         hyd_ext[:, k] += tmp_od
+        if calc_v2_numer:
+            v2_tmp = trapz_func(v_use ** 2 * Calc_tmp, axis=1, x=p_diam)
+            v2_tmp = np.where(sub_frac_arr[:, tt, k] == 0, 0, v2_tmp)
+            v2_numer_tot[:, k] += v2_tmp
 
-    return V_d_numer_tot, moment_denom_tot, hyd_ext, Ze, V_d, sigma_d, Zv
+    return_vals = [V_d_numer_tot, moment_denom_tot, hyd_ext, Ze, V_d, sigma_d, Zv]
+    if calc_v2_numer:
+        return_vals.append(v2_numer_tot)
+    return tuple(return_vals)
 
 
 def _set_p3_tiled_arrays(tt, calc_kws, Dims, p_max_dim, include_vt=True):

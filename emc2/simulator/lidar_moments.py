@@ -1,9 +1,16 @@
 import xarray as xr
 import numpy as np
 import dask.bag as db
+from concurrent.futures import ProcessPoolExecutor
+import os
 from time import time
 from scipy.interpolate import LinearNDInterpolator
 from scipy.interpolate import RegularGridInterpolator
+
+try:
+    from tqdm.auto import tqdm
+except ImportError:
+    tqdm = lambda x, **kwargs: x
 
 from .attenuation import calc_theory_beta_m
 
@@ -15,6 +22,18 @@ else:
 from .psd import calc_and_set_psd_params
 from .radar_moments import _set_p3_tiled_arrays
 from ..core.instrument import ureg, quantity
+
+
+class _PoolWorker:
+    """Picklable callable replacing local lambdas for ProcessPoolExecutor compatibility.
+    Wraps: func(tt, *args, **kwargs)"""
+    def __init__(self, func, *args, **kwargs):
+        self.func = func
+        self.args = args
+        self.kwargs = kwargs
+
+    def __call__(self, tt):
+        return self.func(tt, *self.args, **self.kwargs)
 
 
 def calc_total_alpha_beta(model, OD_from_sfc=True, eta=1):
@@ -552,8 +571,9 @@ def calc_lidar_micro(instrument, model, z_values, OD_from_sfc=True,
         This parameter is set to `False` if `mcphys_scheme == P3` since ice shape is integrated into P3,
         which also affects mu, etc. and therefore the bulk LUT behavior in a similar manner to how the P3
         LUTs are integrated into EMC².
-    parallel: bool
-        If True, use parallelism in calculating lidar parameters.
+    parallel: bool or str
+        If True or 'dask', use Dask bag parallelism with task graph scheduling. If 'processes', use
+        ProcessPoolExecutor for single-node multiprocessing with progress bar. If False, compute serially.
     chunk: int or None
         The number of entries to process in one parallel loop. None will send all of
         the entries to the Dask worker queue at once. Sometimes, Dask will freeze if
@@ -651,11 +671,17 @@ def calc_lidar_micro(instrument, model, z_values, OD_from_sfc=True,
         else:
             calc_kws = None
         sub_frac_arr = model.ds["strat_frac_subcolumns_%s" % hyd_type].values
-        _calc_lidar = lambda x: _calc_strat_lidar_properties(
-            x, N_0, lambdas, mu, p_diam, total_hydrometeor, hyd_type, sub_frac_arr, num_subcolumns,
+        _calc_lidar = _PoolWorker(_calc_strat_lidar_properties,
+            N_0, lambdas, mu, p_diam, total_hydrometeor, hyd_type, sub_frac_arr, num_subcolumns,
             p_diam, beta_p, alpha_p, model.mcphys_scheme, calc_kws)
-        if parallel:
-            print("Doing parallel lidar calculations for %s" % hyd_type)
+        if parallel == 'processes':
+            print("Doing parallel lidar calculations for %s (ProcessPoolExecutor)" % hyd_type)
+            chunksize = chunk if chunk is not None else max(1, Dims[1] // (os.cpu_count() or 1))
+            with ProcessPoolExecutor() as pool:
+                lists = list(tqdm(pool.map(_calc_lidar, np.arange(0, Dims[1], 1), chunksize=chunksize),
+                                  total=Dims[1], desc=f"Column-wise lidar {hyd_type}"))
+        elif parallel:
+            print("Doing parallel lidar calculations for %s (Dask)" % hyd_type)
             if chunk is None:
                 tt_bag = db.from_sequence(np.arange(0, Dims[1], 1))
                 lists = tt_bag.map(_calc_lidar).compute()
@@ -889,14 +915,12 @@ def _calc_strat_lidar_properties(tt, N_0, lambdas, mu, p_diam, total_hydrometeor
     if (hyd_type == 'ci') & (mcphys_scheme == "P3"):
         if not calc_kws["mie_for_ice"]:
             tiled_arr = _set_p3_tiled_arrays(tt, calc_kws, Dims, p_diam, include_vt=False)
-        zero_arr = np.zeros(p_diam.size)
 
     if tt % 50 == 0:
         print('Stratiform moment for class %s progress: %d/%d' % (hyd_type, tt, Dims[1]))
     for k in range(Dims[2]):
         if np.all(total_hydrometeor[:, tt, k] == 0):
             continue
-        N_D = []
         if (hyd_type == 'ci') & (mcphys_scheme == "P3"):  # no N0 etc subcol dim (subcol q filter applies below)
             if not calc_kws["mie_for_ice"]:
                 beta_p = tiled_arr["beta_p"][k, :]
@@ -905,22 +929,15 @@ def _calc_strat_lidar_properties(tt, N_0, lambdas, mu, p_diam, total_hydrometeor
             lambda_tmp = lambdas[tt, k]
             mu_tmp = mu[tt, k]
             N_D_tmp = N_0_tmp * p_diam ** mu_tmp * np.exp(-lambda_tmp * p_diam)
-        for i in range(num_subcolumns):
-            if (hyd_type == 'ci') & (mcphys_scheme == "P3"):
-                if sub_frac_arr[i, tt, k] == 1:
-                    N_D.append(N_D_tmp)   # use subcol q to decide N_D population
-                else:
-                    N_D.append(zero_arr)  # no hydrometeors in subcolumn
-            else:
-                N_0_tmp = N_0[i, tt, k]
-                lambda_tmp = lambdas[i, tt, k]
-                mu_tmp = mu[i, tt, k]
-                N_D.append(N_0_tmp * p_diam ** mu_tmp * np.exp(-lambda_tmp * p_diam))
-        N_D = np.stack(N_D, axis=0)
+            frac_k = sub_frac_arr[:, tt, k]  # use subcol q to decide N_D population
+            N_D = np.where(frac_k[:, None] == 1, N_D_tmp[None, :], 0.)
+        else:
+            N_0_k = N_0[:, tt, k]
+            lambda_k = lambdas[:, tt, k]
+            mu_k = mu[:, tt, k]
+            N_D = N_0_k[:, None] * p_diam[None, :] ** mu_k[:, None] * np.exp(-lambda_k[:, None] * p_diam[None, :])
 
-        Calc_tmp = np.tile(beta_p, (num_subcolumns, 1)) * N_D
-        beta_p_strat[:, k] = trapz_func(Calc_tmp, x=D, axis=1).astype('float64')
-        Calc_tmp = np.tile(alpha_p, (num_subcolumns, 1)) * N_D
-        alpha_p_strat[:, k] = trapz_func(Calc_tmp, x=D, axis=1).astype('float64')
+        beta_p_strat[:, k] = trapz_func(beta_p[None, :] * N_D, x=D, axis=1).astype('float64')
+        alpha_p_strat[:, k] = trapz_func(alpha_p[None, :] * N_D, x=D, axis=1).astype('float64')
 
     return beta_p_strat, alpha_p_strat
