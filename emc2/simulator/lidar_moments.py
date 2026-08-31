@@ -1,9 +1,16 @@
 import xarray as xr
 import numpy as np
 import dask.bag as db
+from concurrent.futures import ProcessPoolExecutor
+import os
 from time import time
 from scipy.interpolate import LinearNDInterpolator
 from scipy.interpolate import RegularGridInterpolator
+
+try:
+    from tqdm.auto import tqdm
+except ImportError:
+    tqdm = lambda x, **kwargs: x
 
 from .attenuation import calc_theory_beta_m
 
@@ -15,6 +22,18 @@ else:
 from .psd import calc_and_set_psd_params
 from .radar_moments import _set_p3_tiled_arrays
 from ..core.instrument import ureg, quantity
+
+
+class _PoolWorker:
+    """Picklable callable replacing local lambdas for ProcessPoolExecutor compatibility.
+    Wraps: func(tt, *args, **kwargs)"""
+    def __init__(self, func, *args, **kwargs):
+        self.func = func
+        self.args = args
+        self.kwargs = kwargs
+
+    def __call__(self, tt):
+        return self.func(tt, *self.args, **self.kwargs)
 
 
 def calc_total_alpha_beta(model, OD_from_sfc=True, eta=1):
@@ -552,8 +571,9 @@ def calc_lidar_micro(instrument, model, z_values, OD_from_sfc=True,
         This parameter is set to `False` if `mcphys_scheme == P3` since ice shape is integrated into P3,
         which also affects mu, etc. and therefore the bulk LUT behavior in a similar manner to how the P3
         LUTs are integrated into EMC².
-    parallel: bool
-        If True, use parallelism in calculating lidar parameters.
+    parallel: bool or str
+        If True or 'dask', use Dask bag parallelism with task graph scheduling. If 'processes', use
+        ProcessPoolExecutor for single-node multiprocessing with progress bar. If False, compute serially.
     chunk: int or None
         The number of entries to process in one parallel loop. None will send all of
         the entries to the Dask worker queue at once. Sometimes, Dask will freeze if
@@ -651,11 +671,17 @@ def calc_lidar_micro(instrument, model, z_values, OD_from_sfc=True,
         else:
             calc_kws = None
         sub_frac_arr = model.ds["strat_frac_subcolumns_%s" % hyd_type].values
-        _calc_lidar = lambda x: _calc_strat_lidar_properties(
-            x, N_0, lambdas, mu, p_diam, total_hydrometeor, hyd_type, sub_frac_arr, num_subcolumns,
+        _calc_lidar = _PoolWorker(_calc_strat_lidar_properties,
+            N_0, lambdas, mu, p_diam, total_hydrometeor, hyd_type, sub_frac_arr, num_subcolumns,
             p_diam, beta_p, alpha_p, model.mcphys_scheme, calc_kws)
-        if parallel:
-            print("Doing parallel lidar calculations for %s" % hyd_type)
+        if parallel == 'processes':
+            print("Doing parallel lidar calculations for %s (ProcessPoolExecutor)" % hyd_type)
+            chunksize = chunk if chunk is not None else max(1, Dims[1] // (os.cpu_count() or 1))
+            with ProcessPoolExecutor() as pool:
+                lists = list(tqdm(pool.map(_calc_lidar, np.arange(0, Dims[1], 1), chunksize=chunksize),
+                                  total=Dims[1], desc=f"Column-wise lidar {hyd_type}"))
+        elif parallel:
+            print("Doing parallel lidar calculations for %s (Dask)" % hyd_type)
             if chunk is None:
                 tt_bag = db.from_sequence(np.arange(0, Dims[1], 1))
                 lists = tt_bag.map(_calc_lidar).compute()

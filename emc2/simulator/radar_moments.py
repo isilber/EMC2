@@ -2,10 +2,17 @@ import xarray as xr
 import numpy as np
 import dask.bag as db
 import dask.array as da
+from concurrent.futures import ProcessPoolExecutor
+import os
 
 from time import time
 from scipy.interpolate import LinearNDInterpolator
 from scipy.interpolate import RegularGridInterpolator
+
+try:
+    from tqdm.auto import tqdm
+except ImportError:
+    tqdm = lambda x, **kwargs: x
 
 from .attenuation import calc_radar_atm_attenuation
 
@@ -16,6 +23,18 @@ else:
     trapz_func = np.trapz
 from .psd import calc_velocity_nssl, calc_and_set_psd_params
 from ..core.instrument import ureg, quantity
+
+
+class _PoolWorker:
+    """Picklable callable replacing local lambdas for ProcessPoolExecutor compatibility.
+    Wraps: func(tt, *args, **kwargs)"""
+    def __init__(self, func, *args, **kwargs):
+        self.func = func
+        self.args = args
+        self.kwargs = kwargs
+
+    def __call__(self, tt):
+        return self.func(tt, *self.args, **self.kwargs)
 
 
 def calc_total_reflectivity(model, detect_mask=False):
@@ -497,8 +516,9 @@ def calc_radar_micro(instrument, model, z_values, atm_ext, OD_from_sfc=True,
         This parameter is set to `False` if `mcphys_scheme == P3` since ice shape is integrated into P3,
         which also affects mu, etc. and therefore the bulk LUT behavior in a similar manner to how the P3
         LUTs are integrated into EMC².
-    parallel: bool
-        If True, use parallelism in calculating lidar parameters.
+    parallel: bool or str
+        If True or 'dask', use Dask bag parallelism with task graph scheduling. If 'processes', use
+        ProcessPoolExecutor for single-node multiprocessing with progress bar. If False, compute serially.
     chunk: int or None
         The number of entries to process in one parallel loop. None will send all of
         the entries to the Dask worker queue at once. Sometimes, Dask will freeze if
@@ -653,12 +673,18 @@ def calc_radar_micro(instrument, model, z_values, atm_ext, OD_from_sfc=True,
                 rhoa_corr = (model.Vd_rhoa_scaling_ref[hyd_type] / model.ds["rho_a"].values) ** 0.54
 
         if hyd_type == "cl":
-            _calc_liquid = lambda x: _calculate_observables_liquid(
-                x, total_hydrometeor, N_0, lambdas, mu,
+            _calc_liquid = _PoolWorker(_calculate_observables_liquid,
+                total_hydrometeor, N_0, lambdas, mu,
                 alpha_p, beta_p, v_tmp, num_subcolumns, instrument, p_diam,
                 rhoa_corr)
-            if parallel:
-                print("Performing parallel radar calculations for %s" % hyd_type)
+            if parallel == 'processes':
+                print("Performing parallel radar calculations for %s (ProcessPoolExecutor)" % hyd_type)
+                chunksize = chunk if chunk is not None else max(1, Dims[1] // (os.cpu_count() or 1))
+                with ProcessPoolExecutor() as pool:
+                    my_tuple = list(tqdm(pool.map(_calc_liquid, np.arange(0, Dims[1], 1), chunksize=chunksize),
+                                         total=Dims[1], desc=f"Column-wise radar {hyd_type}"))
+            elif parallel:
+                print("Performing parallel radar calculations for %s (Dask)" % hyd_type)
                 if chunk is None:
                     tt_bag = db.from_sequence(np.arange(0, Dims[1], 1))
                     my_tuple = tt_bag.map(_calc_liquid).compute()
@@ -695,15 +721,21 @@ def calc_radar_micro(instrument, model, z_values, atm_ext, OD_from_sfc=True,
             del my_tuple
         else:
             sub_frac_arr = model.ds["strat_frac_subcolumns_%s" % hyd_type].values
-            _calc_other = lambda x: _calculate_other_observables(
-                x, total_hydrometeor, N_0, lambdas, mu, model.num_subcolumns,
+            _calc_other = _PoolWorker(_calculate_other_observables,
+                total_hydrometeor, N_0, lambdas, mu, model.num_subcolumns,
                 beta_p, alpha_p, v_tmp,
                 instrument.wavelength, instrument.K_w,
                 sub_frac_arr, hyd_type, p_diam, beta_pv, rhoe, model.mcphys_scheme,
                 rhoa_corr, calc_kws)
 
-            if parallel:
-                print("Doing parallel radar calculation for %s" % hyd_type)
+            if parallel == 'processes':
+                print("Doing parallel radar calculation for %s (ProcessPoolExecutor)" % hyd_type)
+                chunksize = chunk if chunk is not None else max(1, Dims[1] // (os.cpu_count() or 1))
+                with ProcessPoolExecutor() as pool:
+                    my_tuple = list(tqdm(pool.map(_calc_other, np.arange(0, Dims[1], 1), chunksize=chunksize),
+                                         total=Dims[1], desc=f"Column-wise radar {hyd_type}"))
+            elif parallel:
+                print("Doing parallel radar calculation for %s (Dask)" % hyd_type)
                 if chunk is None:
                     tt_bag = db.from_sequence(np.arange(0, Dims[1], 1))
                     my_tuple = tt_bag.map(_calc_other).compute()
@@ -815,12 +847,17 @@ def calc_radar_micro(instrument, model, z_values, atm_ext, OD_from_sfc=True,
 
             Vd_tot = model.ds["sub_col_Vd_tot_strat"].values
             if hyd_type == "cl":
-                _calc_sigma_d_liq = lambda x: _calc_sigma_d_tot_cl(
-                    x, N_0, lambdas, mu, instrument,
+                _calc_sigma_d_liq = _PoolWorker(_calc_sigma_d_tot_cl,
+                    N_0, lambdas, mu, instrument,
                     model.vel_param_a, model.vel_param_b, total_hydrometeor,
                     p_diam, Vd_tot, num_subcolumns, model.mcphys_scheme, rhoa_corr, model=model)
 
-                if parallel:
+                if parallel == 'processes':
+                    chunksize = chunk if chunk is not None else max(1, Dims[1] // (os.cpu_count() or 1))
+                    with ProcessPoolExecutor() as pool:
+                        sigma_d_numer = list(tqdm(pool.map(_calc_sigma_d_liq, np.arange(0, Dims[1], 1), chunksize=chunksize),
+                                                  total=Dims[1], desc="Stage 2/2: Spectral width (cl)"))
+                elif parallel:
                     if chunk is None:
                         tt_bag = db.from_sequence(np.arange(0, Dims[1], 1))
                         sigma_d_numer = tt_bag.map(_calc_sigma_d_liq).compute()
@@ -842,12 +879,17 @@ def calc_radar_micro(instrument, model, z_values, atm_ext, OD_from_sfc=True,
                 sigma_d_numer_tot = np.nan_to_num(np.stack([x[0] for x in sigma_d_numer], axis=1))
             else:
                 sub_frac_arr = model.ds["strat_frac_subcolumns_%s" % hyd_type].values
-                _calc_sigma = lambda x: _calc_sigma_d_tot(
-                    x, num_subcolumns, v_tmp, N_0, lambdas, mu,
+                _calc_sigma = _PoolWorker(_calc_sigma_d_tot,
+                    num_subcolumns, v_tmp, N_0, lambdas, mu,
                     total_hydrometeor, Vd_tot, sub_frac_arr, p_diam, beta_p,
                     rhoe, hyd_type, model.mcphys_scheme, rhoa_corr, calc_kws)
 
-                if parallel:
+                if parallel == 'processes':
+                    chunksize = chunk if chunk is not None else max(1, Dims[1] // (os.cpu_count() or 1))
+                    with ProcessPoolExecutor() as pool:
+                        sigma_d_numer = list(tqdm(pool.map(_calc_sigma, np.arange(0, Dims[1], 1), chunksize=chunksize),
+                                                  total=Dims[1], desc=f"Stage 2/2: Spectral width ({hyd_type})"))
+                elif parallel:
                     if chunk is None:
                         tt_bag = db.from_sequence(np.arange(0, Dims[1], 1))
                         sigma_d_numer = tt_bag.map(_calc_sigma).compute()
