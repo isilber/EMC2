@@ -86,8 +86,8 @@ def calc_total_alpha_beta(model, OD_from_sfc=True, eta=1):
     model.ds["sub_col_OD_tot"].attrs["long_name"] = \
         "Total cumulative optical depth at %s (convective + stratiform)" % OD_str
     model.ds["sub_col_OD_tot"].attrs["units"] = "1"
-    beta_m = np.tile(model.ds['sigma_180_vol'].values, (model.num_subcolumns, 1, 1))
-    T = np.tile(model.ds['tau'].values, (model.num_subcolumns, 1, 1))
+    beta_m = model.ds['sigma_180_vol'].values[None, :, :]
+    T = model.ds['tau'].values[None, :, :]
     model.ds['sub_col_beta_att_tot'] = (beta_m + model.ds['sub_col_beta_p_tot']) * \
         T * np.exp(-2 * eta * model.ds['sub_col_OD_tot'])
     model.ds["sub_col_beta_att_tot"].attrs["long_name"] = \
@@ -838,8 +838,8 @@ def calc_lidar_moments(instrument, model, is_conv,
     del p_temp, t_temp, z_temp
 
     model = calc_theory_beta_m(model, instrument.wavelength)
-    beta_m = np.tile(model.ds['sigma_180_vol'].values, (model.num_subcolumns, 1, 1))
-    T = np.tile(model.ds['tau'].values, (model.num_subcolumns, 1, 1))
+    beta_m = model.ds['sigma_180_vol'].values[None, :, :]
+    T = model.ds['tau'].values[None, :, :]
 
     t0 = time()
     if use_empiric_calc:

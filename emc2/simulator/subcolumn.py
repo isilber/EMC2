@@ -199,7 +199,6 @@ def set_stratiform_sub_col_frac(model, N_columns=None, use_rad_logic=True, paral
 
         _allocate_strat_sub_cols = functools.partial(
             _allocate_strat_sub_col,
-            cld_2_assigns=cld_2_assigns, I_min=I_min, I_max=I_max,
             conv_profs=conv_profs, full_overcast_cl_ci=full_overcast_cl_ci,
             data_frac1=data_frac1, data_frac2=data_frac2, N_columns=N_columns,
             overlapping_cloud=overlapping_cloud,
@@ -648,7 +647,7 @@ def _setxor(x, y):
     return np.concatenate([first_set, second_set])
 
 
-def _allocate_strat_sub_col(tt, cld_2_assigns, I_min, I_max, conv_profs,
+def _allocate_strat_sub_col(tt, conv_profs,
                             full_overcast_cl_ci, data_frac1, data_frac2, N_columns, overlapping_cloud,
                             seed=None):
     if seed is not None:

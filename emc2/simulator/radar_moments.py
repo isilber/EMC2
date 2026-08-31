@@ -1195,7 +1195,7 @@ def _calc_sigma_d_tot_cl(tt, N_0, lambdas, mu, instrument,
                 v_tmp = v_tmp.magnitude
         v_tmp = -v_tmp.astype('float64')
         v_use = v_tmp * rhoa_corr_single
-        Calc_tmp2 = (v_use - np.tile(Vd_tot[:, tt, k], (num_diam, 1)).T) ** 2 * Calc_tmp.astype('float64')
+        Calc_tmp2 = (v_use - Vd_tot[:, tt, k, None]) ** 2 * Calc_tmp.astype('float64')
         sigma_d_numer[:, k] = trapz_func(Calc_tmp2, x=p_diam, axis=1)
 
     return sigma_d_numer, moment_denom
@@ -1237,14 +1237,14 @@ def _calc_sigma_d_tot(tt, num_subcolumns, v_tmp, N_0, lambdas, mu,
                 N_D.append(N_0_tmp[i] * np.exp(-lambda_tmp[i] * p_diam))  # exponential PSD (mu=0)
                 #N_D.append(N_0_tmp[i] * p_diam ** mu * np.exp(-lambda_tmp[i] * p_diam))
         N_D = np.stack(N_D, axis=1).astype('float64')
-        Calc_tmp = np.tile(beta_p, (num_subcolumns, 1)) * N_D.T
+        Calc_tmp = beta_p[None, :] * N_D.T
         moment_denom = trapz_func(Calc_tmp, x=p_diam, axis=1).astype('float64')
         v_use = v_tmp
         if rhoe is not None:
             if mcphys_scheme.lower() in ["nssl"]:  # NSSL parameterization for fall velocity
                 v_use = calc_velocity_nssl(rhoe[tt, k], p_diam, hyd_type)
         v_use = v_use * rhoa_corr_single
-        Calc_tmp2 = (v_use - np.tile(vd_tot[:, tt, k], (num_diam, 1)).T) ** 2 * Calc_tmp.astype('float64')
+        Calc_tmp2 = (v_use - vd_tot[:, tt, k, None]) ** 2 * Calc_tmp.astype('float64')
         Calc_tmp2 = trapz_func(Calc_tmp2, x=p_diam, axis=1)
         sigma_d_numer[:, k] = np.where(sub_frac_arr[:, tt, k] == 0, 0, Calc_tmp2)
 
@@ -1292,7 +1292,7 @@ def _calculate_observables_liquid(tt, total_hydrometeor, N_0, lambdas, mu,
         Calc_tmp2 = v_use * Calc_tmp.astype('float64')
         V_d_numer = trapz_func(Calc_tmp2, x=p_diam, axis=1)
         V_d[:, k] = V_d_numer / moment_denom
-        Calc_tmp2 = (v_use - np.tile(V_d[:, k], (num_diam, 1)).T) ** 2 * Calc_tmp
+        Calc_tmp2 = (v_use - V_d[:, k, None]) ** 2 * Calc_tmp
         sigma_d_numer = trapz_func(Calc_tmp2, x=p_diam, axis=1)
         sigma_d[:, k] = np.sqrt(sigma_d_numer / moment_denom)
         V_d_numer_tot[:, k] += V_d_numer
@@ -1365,7 +1365,7 @@ def _calculate_other_observables(tt, total_hydrometeor, N_0, lambdas, mu,
         V_d_numer = trapz_func(Calc_tmp2, axis=1, x=p_diam)
         V_d_numer = np.where(sub_frac_arr[:, tt, k] == 0, 0, V_d_numer)
         V_d[:, k] = V_d_numer / moment_denom
-        Calc_tmp2 = (v_use - np.tile(V_d[:, k], (num_diam, 1)).T) ** 2 * Calc_tmp
+        Calc_tmp2 = (v_use - V_d[:, k, None]) ** 2 * Calc_tmp
         Calc_tmp2 = trapz_func(Calc_tmp2, axis=1, x=p_diam)
         sigma_d_numer = np.where(sub_frac_arr[:, tt, k] == 0, 0, Calc_tmp2)
         sigma_d[:, k] = np.sqrt(sigma_d_numer / moment_denom)
