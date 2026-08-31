@@ -781,6 +781,7 @@ def calc_radar_micro(instrument, model, z_values, atm_ext, OD_from_sfc=True,
             if calc_spectral_width and single_pass_spectral_width:
                 v2_numer_tot += np.nan_to_num(
                     np.stack([x[7] for x in my_tuple], axis=1))
+            del my_tuple
 
         if "sub_col_Ze_tot_strat" in model.ds.variables.keys():
             model.ds["sub_col_Ze_tot_strat"] += model.ds["sub_col_Ze_%s_strat" % hyd_type].fillna(0)
@@ -946,11 +947,12 @@ def calc_radar_micro(instrument, model, z_values, atm_ext, OD_from_sfc=True,
     model.ds['sub_col_Vd_tot_strat'].attrs["units"] = r"$m\ s^{-1}$"
     model.ds['sub_col_Vd_tot_strat'].attrs["Processing method"] = method_str
     model.ds['sub_col_Vd_tot_strat'].attrs["Ice scattering database"] = scat_str
-    model.ds['sub_col_sigma_d_tot_strat'].attrs["long_name"] = \
-        "Spectral width from all stratiform hydrometeors"
-    model.ds['sub_col_sigma_d_tot_strat'].attrs["units"] = r"$m\ s^{-1}$"
-    model.ds["sub_col_sigma_d_tot_strat"].attrs["Processing method"] = method_str
-    model.ds["sub_col_sigma_d_tot_strat"].attrs["Ice scattering database"] = scat_str
+    if calc_spectral_width:
+        model.ds['sub_col_sigma_d_tot_strat'].attrs["long_name"] = \
+            "Spectral width from all stratiform hydrometeors"
+        model.ds['sub_col_sigma_d_tot_strat'].attrs["units"] = r"$m\ s^{-1}$"
+        model.ds["sub_col_sigma_d_tot_strat"].attrs["Processing method"] = method_str
+        model.ds["sub_col_sigma_d_tot_strat"].attrs["Ice scattering database"] = scat_str
     return model
 
 
@@ -1340,8 +1342,8 @@ def _calculate_other_observables(tt, total_hydrometeor, N_0, lambdas, mu,
             N_0_k = N_0[:, tt, k]
             lambda_k = lambdas[:, tt, k]
             N_D = N_0_k[:, None] * np.exp(-lambda_k[:, None] * p_diam[None, :])  # exponential PSD (mu=0)
-        Calc_tmp = np.tile(beta_p, (num_subcolumns, 1)) * N_D
-        tmp_od = np.tile(alpha_p, (num_subcolumns, 1)) * N_D
+        Calc_tmp = beta_p[None, :] * N_D
+        tmp_od = alpha_p[None, :] * N_D
         tmp_od = trapz_func(tmp_od, x=p_diam, axis=1)
         tmp_od = np.where(sub_frac_arr[:, tt, k] == 0, 0, tmp_od)
         moment_denom = trapz_func(Calc_tmp, x=p_diam, axis=1)
@@ -1349,7 +1351,7 @@ def _calculate_other_observables(tt, total_hydrometeor, N_0, lambdas, mu,
         Ze[:, k] = \
             (moment_denom * wavelength ** 4) / (K_w * np.pi ** 5) * 1e-6
         if beta_pv is not None:
-            Calc_tmp = np.tile(beta_pv, (num_subcolumns, 1)) * N_D
+            Calc_tmp = beta_pv[None, :] * N_D
             moment_denom = trapz_func(Calc_tmp, x=p_diam, axis=1).astype('float64')
             Zv[:, k] = \
                 (moment_denom * wavelength ** 4) / (K_w * np.pi ** 5) * 1e-6

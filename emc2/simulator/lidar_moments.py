@@ -209,13 +209,13 @@ def accumulate_OD(model, is_conv, z_values, hyd_type, OD_from_sfc=True, **kwargs
 
     Dims = model.ds["%s_q_subcolumns_%s" % (cloud_str, hyd_type)].shape
     if OD_from_sfc:
-        dz = np.tile(np.diff(z_values, axis=1, prepend=0.), (model.num_subcolumns, 1, 1))
+        dz = np.diff(z_values, axis=1, prepend=0.)[None, :, :]
         model.ds["sub_col_OD_%s_%s" % (hyd_type, cloud_str)] = xr.DataArray(np.cumsum(
             dz * np.concatenate((np.zeros(Dims[:2] + (1,)),
                                  model.ds["sub_col_alpha_p_%s_%s" % (hyd_type, cloud_str)][:, :, :-1]), axis=2),
             axis=2), dims=model.ds["%s_q_subcolumns_%s" % (cloud_str, hyd_type)].dims)
     else:
-        dz = np.tile(np.diff(z_values, axis=1, append=0.), (model.num_subcolumns, 1, 1))
+        dz = np.diff(z_values, axis=1, append=0.)[None, :, :]
         model.ds["sub_col_OD_%s_%s" % (hyd_type, cloud_str)] = xr.DataArray(np.flip(np.cumsum(
             np.flip(dz * np.concatenate((model.ds["sub_col_alpha_p_%s_%s" % (hyd_type, cloud_str)][:, :, 1:],
                                          np.zeros(Dims[:2] + (1,))), axis=2), axis=2), axis=2), axis=2),
@@ -701,6 +701,7 @@ def calc_lidar_micro(instrument, model, z_values, OD_from_sfc=True,
             lists = [x for x in map(_calc_lidar, np.arange(0, Dims[1], 1))]
         beta_p_strat = np.stack([x[0] for x in lists], axis=1)
         alpha_p_strat = np.stack([x[1] for x in lists], axis=1)
+        del lists
 
         model.ds["sub_col_beta_p_%s_strat" % hyd_type][:, :, :] = beta_p_strat
         model.ds["sub_col_alpha_p_%s_strat" % hyd_type][:, :, :] = alpha_p_strat

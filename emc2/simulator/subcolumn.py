@@ -639,7 +639,7 @@ def set_q_n(model, hyd_type, is_conv=True, qc_flag=False, inv_rel_var=None, use_
 def _randperm(x, size=None):
     if size is None:
         size = len(x)
-    return np.random.permutation(x)[0:int(size)].astype(int)
+    return np.random.choice(x, size=int(size), replace=False).astype(int)
 
 
 def _setxor(x, y):
@@ -674,8 +674,9 @@ def _allocate_strat_sub_col(tt, cld_2_assigns, I_min, I_max, conv_profs,
             overlying_locs_list = [overlying_locs1, overlying_locs2]
             overlying_num = np.array([len(overlying_locs1), len(overlying_locs2)], dtype=int)
             over_diff = abs(overlying_num[1] - overlying_num[0])
-            Iover_min = np.argmin(overlying_num)
-            Iover_max = np.argmax(overlying_num)
+            sorted_idx = np.argsort(overlying_num)
+            Iover_min = sorted_idx[0]
+            Iover_max = sorted_idx[-1]
             over_unique_lo = _setxor(overlying_locs1, overlying_locs2)
 
             if overlying_num[Iover_min] > cld_2_assign[I_max]:
