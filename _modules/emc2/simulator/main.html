@@ -89,7 +89,7 @@
 <a class="viewcode-back" href="../../../API/generated/emc2.simulator.main.make_simulated_data.html#emc2.simulator.main.make_simulated_data">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">make_simulated_data</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">instrument</span><span class="p">,</span> <span class="n">N_columns</span><span class="p">,</span> <span class="n">do_classify</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">unstack_dims</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
                         <span class="n">skip_subcol_gen</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">finalize_fields</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">calc_spectral_width</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-                        <span class="n">subcol_gen_only</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                        <span class="n">single_pass_spectral_width</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">subcol_gen_only</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
                         <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    This procedure will make all of the subcolumns and simulated data for each model column.</span>
@@ -126,6 +126,11 @@
 <span class="sd">    calc_spectral_width: bool</span>
 <span class="sd">        If False, skips spectral width calculations since these are not always needed for an application</span>
 <span class="sd">        and are the most computationally expensive. Default is True.</span>
+<span class="sd">    single_pass_spectral_width: bool</span>
+<span class="sd">        If True (default), computes spectral width from variance formula during pass 1 using cached</span>
+<span class="sd">        integrals when calc_spectral_width=True, eliminating the second parallel pass. If False, uses</span>
+<span class="sd">        original two-pass approach with separate spectral width dispatch (17% less peak RAM usage).</span>
+<span class="sd">        Only relevant for radar calculations with microphysics logic. Default is True.</span>
 <span class="sd">    subcol_gen_only: bool</span>
 <span class="sd">        If True, only returns mass and number distributed among subcolumns and skips moment calculations</span>
 <span class="sd">    seed: int or None</span>
@@ -239,13 +244,15 @@
                 <span class="n">instrument</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="kc">False</span><span class="p">,</span> <span class="n">OD_from_sfc</span><span class="o">=</span><span class="n">OD_from_sfc</span><span class="p">,</span> <span class="n">hyd_types</span><span class="o">=</span><span class="n">hyd_types</span><span class="p">,</span>
                 <span class="n">parallel</span><span class="o">=</span><span class="n">parallel</span><span class="p">,</span> <span class="n">chunk</span><span class="o">=</span><span class="n">chunk</span><span class="p">,</span> <span class="n">mie_for_ice</span><span class="o">=</span><span class="n">mie_for_ice</span><span class="p">[</span><span class="s2">"strat"</span><span class="p">],</span>
                 <span class="n">use_rad_logic</span><span class="o">=</span><span class="n">use_rad_logic</span><span class="p">,</span>
-                <span class="n">use_empiric_calc</span><span class="o">=</span><span class="n">use_empiric_calc</span><span class="p">,</span> <span class="n">calc_spectral_width</span><span class="o">=</span><span class="n">calc_spectral_width</span><span class="p">,</span><span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+                <span class="n">use_empiric_calc</span><span class="o">=</span><span class="n">use_empiric_calc</span><span class="p">,</span> <span class="n">calc_spectral_width</span><span class="o">=</span><span class="n">calc_spectral_width</span><span class="p">,</span>
+                <span class="n">single_pass_spectral_width</span><span class="o">=</span><span class="n">single_pass_spectral_width</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">process_conv</span><span class="p">:</span>
                 <span class="n">model</span> <span class="o">=</span> <span class="n">calc_radar_moments</span><span class="p">(</span>
                     <span class="n">instrument</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="kc">True</span><span class="p">,</span> <span class="n">OD_from_sfc</span><span class="o">=</span><span class="n">OD_from_sfc</span><span class="p">,</span> <span class="n">hyd_types</span><span class="o">=</span><span class="n">hyd_types</span><span class="p">,</span>
                     <span class="n">parallel</span><span class="o">=</span><span class="n">parallel</span><span class="p">,</span> <span class="n">chunk</span><span class="o">=</span><span class="n">chunk</span><span class="p">,</span> <span class="n">mie_for_ice</span><span class="o">=</span><span class="n">mie_for_ice</span><span class="p">[</span><span class="s2">"conv"</span><span class="p">],</span>
                     <span class="n">use_rad_logic</span><span class="o">=</span><span class="n">use_rad_logic</span><span class="p">,</span>
-                    <span class="n">use_empiric_calc</span><span class="o">=</span><span class="n">use_empiric_calc</span><span class="p">,</span> <span class="n">calc_spectral_width</span><span class="o">=</span><span class="n">calc_spectral_width</span><span class="p">,</span><span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+                    <span class="n">use_empiric_calc</span><span class="o">=</span><span class="n">use_empiric_calc</span><span class="p">,</span> <span class="n">calc_spectral_width</span><span class="o">=</span><span class="n">calc_spectral_width</span><span class="p">,</span>
+                    <span class="n">single_pass_spectral_width</span><span class="o">=</span><span class="n">single_pass_spectral_width</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
 
             <span class="n">model</span> <span class="o">=</span> <span class="n">calc_radar_Ze_min</span><span class="p">(</span><span class="n">instrument</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="n">ref_rng</span><span class="p">)</span>
             <span class="n">model</span> <span class="o">=</span> <span class="n">calc_total_reflectivity</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">detect_mask</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
