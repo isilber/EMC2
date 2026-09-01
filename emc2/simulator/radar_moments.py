@@ -1159,9 +1159,8 @@ def _calc_sigma_d_tot_cl(tt, N_0, lambdas, mu, instrument,
         print('Processing `cl` sigma_D tot in column: %d/%d' % (tt, total_hydrometeor.shape[1]))
     num_diam = len(p_diam)
     Dims = Vd_tot.shape
-    for k in range(Dims[2]):
-        if np.all(total_hydrometeor[:, tt, k] == 0):
-            continue
+    active_k = np.where(total_hydrometeor[:, tt, :].any(axis=0))[0]
+    for k in active_k:
         rhoa_corr_single = rhoa_corr[tt, k]
         N_0_tmp = N_0[:, tt, k].astype('float64')
         lambda_tmp = lambdas[:, tt, k].astype('float64')
@@ -1210,9 +1209,8 @@ def _calc_sigma_d_tot(tt, num_subcolumns, v_tmp, N_0, lambdas, mu,
     if (hyd_type == 'ci') & (mcphys_scheme == "P3"):
         tiled_arr = _set_p3_tiled_arrays(tt, calc_kws, Dims, p_diam)
     num_diam = len(p_diam)
-    for k in range(Dims[2]):
-        if np.all(total_hydrometeor[:, tt, k] == 0):
-            continue
+    active_k = np.where(total_hydrometeor[:, tt, :].any(axis=0))[0]
+    for k in active_k:
         rhoa_corr_single = rhoa_corr[tt, k]
         if (hyd_type == 'ci') & (mcphys_scheme == "P3"):  # no N0 etc subcol dim (subcol q filter below & psd.py)
             v_tmp = tiled_arr["vt"][k, :]
@@ -1264,9 +1262,8 @@ def _calculate_observables_liquid(tt, total_hydrometeor, N_0, lambdas, mu,
     if tt % 100 == 0:
         print("Processing `cl` in column %d/%d" % (tt, N_0.shape[1]))
     np.seterr(all="ignore")
-    for k in range(height_dims):
-        if np.all(total_hydrometeor[:, tt, k] == 0):
-            continue
+    active_k = np.where(total_hydrometeor[:, tt, :].any(axis=0))[0]
+    for k in active_k:
         rhoa_corr_single = rhoa_corr[tt, k]
         if num_subcolumns > 1:
             N_0_tmp = np.squeeze(N_0[:, tt, k])
@@ -1321,9 +1318,8 @@ def _calculate_other_observables(tt, total_hydrometeor, N_0, lambdas, mu,
     v2_numer_tot = np.zeros_like(Ze) if calc_v2_numer else None
     if (hyd_type == 'ci') & (mcphys_scheme == "P3"):
         tiled_arr = _set_p3_tiled_arrays(tt, calc_kws, Dims, p_diam)
-    for k in range(Dims[2]):
-        if np.all(total_hydrometeor[:, tt, k] == 0):
-            continue
+    active_k = np.where(total_hydrometeor[:, tt, :].any(axis=0))[0]
+    for k in active_k:
         num_diam = len(p_diam)
         rhoa_corr_single = rhoa_corr[tt, k]
         if (hyd_type == 'ci') & (mcphys_scheme == "P3"):  # no N0 etc subcol dim (subcol q filter below & psd.py)

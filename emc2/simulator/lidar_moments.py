@@ -918,9 +918,8 @@ def _calc_strat_lidar_properties(tt, N_0, lambdas, mu, p_diam, total_hydrometeor
 
     if tt % 50 == 0:
         print('Stratiform moment for class %s progress: %d/%d' % (hyd_type, tt, Dims[1]))
-    for k in range(Dims[2]):
-        if np.all(total_hydrometeor[:, tt, k] == 0):
-            continue
+    active_k = np.where(total_hydrometeor[:, tt, :].any(axis=0))[0]
+    for k in active_k:
         if (hyd_type == 'ci') & (mcphys_scheme == "P3"):  # no N0 etc subcol dim (subcol q filter applies below)
             if not calc_kws["mie_for_ice"]:
                 beta_p = tiled_arr["beta_p"][k, :]
